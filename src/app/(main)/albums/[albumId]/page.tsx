@@ -32,6 +32,7 @@ import { useAlbumPhotoContext } from "./provider"
 import { useApp } from "@/app/(main)/provider"
 import { PhotoDateDrawer } from "@/components/photo/photo-date-drawer"
 import { PhotoMasonrySkeleton } from "@/components/photo/photo-masonry-skeleton"
+import { AlbumKindEnum } from "@/server/enums/album-enum"
 
 const AlbumSelectDialog = dynamic(
   () => import("@/components/album/album-select-dialog").then((mod) => mod.AlbumSelectDialog),
@@ -239,7 +240,7 @@ export default function Page() {
                 onPhotoFavorite={changePhotoFavorite}
                 onPhotoDelete={isAdmin || currentAlbum?.canDeleteOwn ? deletePhotos : undefined}
                 onAlbumOpen={isAdmin ? openAlbumDialog : undefined}
-                onAlbumRemove={isAdmin ? removeAlbumPhotos : undefined}
+                onAlbumRemove={isAdmin && currentAlbum?.kind !== AlbumKindEnum.PERSONAL ? removeAlbumPhotos : undefined}
               />
             ) : (
               <PhotoMasonrySkeleton photos={initialPhotos} />

@@ -8,6 +8,10 @@ import { AlbumActionMenu } from "@/components/album/album-action-menu"
 import { getThumbHashUrl } from "@/lib/thumb-hash"
 import { type AlbumVo } from "@/server/entity/vo/album"
 import { useAlbumStore } from "@/store/album-store"
+import { useApp } from "@/app/(main)/provider"
+import { AlbumKindEnum } from "@/server/enums/album-enum"
+import { UserTypeEnum } from "@/server/enums/user-enum"
+import { useTranslations } from "next-intl"
 
 type AlbumCardProps = Partial<RenderComponentProps<AlbumVo>> & {
   data: AlbumVo
@@ -21,12 +25,20 @@ type AlbumCardProps = Partial<RenderComponentProps<AlbumVo>> & {
 // 渲染虚拟列表中的单个相册卡片。
 export function AlbumCard({ data, width, href, onPermissions, onRename, onTop, onDelete }: AlbumCardProps) {
   const setCurrentAlbumName = useAlbumStore((state) => state.setCurrentAlbumName)
+  const { userInfo } = useApp()
+  const t = useTranslations("albums")
   const thumbnailSrc = data.thumbnail
   const placeholder = useMemo(() => getThumbHashUrl(data.thumbHash), [data.thumbHash])
+  const personal = data.kind === AlbumKindEnum.PERSONAL
+  const displayName = personal
+    ? userInfo?.type === UserTypeEnum.ADMIN && data.ownerName
+      ? `${data.ownerName} · ${t("personal")}`
+      : t("personal")
+    : data.name
 
   // 点击进入相册前记录当前相册名称，供照片页面包屑展示。
   function saveCurrentAlbumName() {
-    setCurrentAlbumName(data.name)
+    setCurrentAlbumName(displayName)
   }
 
   // 把重命名操作和当前相册交给上层页面。
@@ -71,7 +83,7 @@ export function AlbumCard({ data, width, href, onPermissions, onRename, onTop, o
         {thumbnailSrc ? (
           <img
             src={thumbnailSrc}
-            alt={data.name}
+            alt={displayName}
             crossOrigin="anonymous"
             className="absolute inset-0 h-full w-full object-cover duration-300 group-hover:scale-105"
             onError={(event) => {
@@ -91,11 +103,11 @@ export function AlbumCard({ data, width, href, onPermissions, onRename, onTop, o
             {data.photoTotal}
           </div>
           <div className="max-w-full truncate text-lg font-semibold">
-            {data.name}
+            {displayName}
           </div>
         </div>
       </Link>
-      {onPermissions && onRename && onTop && onDelete && (
+      {!personal && onPermissions && onRename && onTop && onDelete && (
         <div className="absolute top-[4px] right-[4px] z-10">
           <AlbumActionMenu
             shadow={Boolean(thumbnailSrc)}

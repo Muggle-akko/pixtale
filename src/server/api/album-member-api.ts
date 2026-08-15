@@ -1,6 +1,6 @@
 import { Context } from 'hono';
 import { app } from '../hono/hono';
-import { type AlbumMemberBatchSetBo, type AlbumMemberListBo, type AlbumMemberRemoveBo, type AlbumMemberSetBo } from '@/server/entity/bo/album-member';
+import { type AlbumMemberBatchSetBo, type AlbumMemberListBo, type AlbumMemberRemoveBo, type AlbumMemberSetBo, type AlbumMemberUserListBo } from '@/server/entity/bo/album-member';
 import result from '@/server/model/result';
 import { albumPermissionService } from '@/server/service/album-permission-service';
 import { getUserId } from '@/server/security/context';
@@ -10,7 +10,14 @@ import { getUserId } from '@/server/security/context';
 // 查询指定相册的成员权限。
 app.post('/album/member/list', async (c: Context) => {
   const body = await c.req.json<AlbumMemberListBo>();
-  const data = await albumPermissionService.listMembers(body.albumId);
+  const data = await albumPermissionService.listMembers(body.albumId, getUserId());
+  return c.json(result.ok(data));
+});
+
+// 按指定成员查询全部共享相册权限。
+app.post('/album/member/userList', async (c: Context) => {
+  const body = await c.req.json<AlbumMemberUserListBo>();
+  const data = await albumPermissionService.listAlbumsForMember(body.userId, getUserId());
   return c.json(result.ok(data));
 });
 

@@ -18,4 +18,13 @@ interface AlbumMemberVo {
   canDeleteOwn: boolean;
 }
 
-export type { AlbumMemberVo, AlbumPermission };
+interface UserAlbumPermissionVo {
+  albumId: string;
+  name: string;
+  photoTotal: number;
+  canView: boolean;
+  canUpload: boolean;
+  canDeleteOwn: boolean;
+}
+
+export type { AlbumMemberVo, AlbumPermission, UserAlbumPermissionVo };

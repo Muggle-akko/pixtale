@@ -2,6 +2,7 @@
 
 import { PencilIcon, SendIcon, Trash2Icon, XIcon } from "lucide-react"
 import { useState } from "react"
+import { useLocale } from "next-intl"
 
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -38,8 +39,25 @@ type PhotoCommentComposerProps = {
   }
 }
 
+// 按当前界面语言显示评论创建日期。
+function formatCommentDate(value: string, locale: string) {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return ""
+  }
+
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date)
+}
+
 // 把评论标签固定在图片归一化坐标上，并反向旋转文字保持可读。
 function PhotoCommentMarkers({ comments, visible, rotate, selectedCommentId, onSelect }: PhotoCommentMarkersProps) {
+  const locale = useLocale()
+
   if (!visible) {
     return null
   }
@@ -68,8 +86,9 @@ function PhotoCommentMarkers({ comments, visible, rotate, selectedCommentId, onS
             onSelect(comment)
           }}
         >
-          <span className="block truncate font-medium text-white/75">
-            {comment.authorName}
+          <span className="flex min-w-0 items-baseline gap-1.5 text-white/75">
+            <span className="truncate font-medium">{comment.authorName}</span>
+            <span className="shrink-0 text-[10px] text-white/50">{formatCommentDate(comment.createTime, locale)}</span>
           </span>
           <span className="line-clamp-3 break-words">{comment.body}</span>
         </button>

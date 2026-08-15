@@ -2,6 +2,7 @@ import { and, asc, countDistinct, desc, eq, getTableColumns, gte, inArray, isNot
 import { createId } from '@/server/lib/id';
 import { type Photo, photoTab } from '@/server/entity/photo';
 import { albumPhotoTab } from '@/server/entity/album-photo';
+import { albumTab } from '@/server/entity/album';
 import { orm } from '@/server/infra/db';
 import BizError from '@/server/error/biz-error';
 import { storage } from '@/server/storage/storage';
@@ -58,6 +59,7 @@ const photoService = {
       ? photoTab.recycleTime
       : photoTab.takenTime;
     const isAdmin = await albumPermissionService.isAdmin(userId);
+    const visibleAlbumIds = isAdmin ? [] : await albumPermissionService.listVisibleAlbumIds(userId);
     let albumPermission: AlbumPermission | null = null;
     const favoritePhotoIds = await photoFavoriteService.listPhotoIds(userId);
     const favoritePhotoIdSet = new Set(favoritePhotoIds);
@@ -119,8 +121,6 @@ const photoService = {
         .orderBy(desc(orderColumn), desc(photoTab.photoId))
         .limit(size);
     } else {
-      const visibleAlbumIds = await albumPermissionService.listVisibleAlbumIds(userId);
-
       if (!visibleAlbumIds.length) {
         return { list: [], total: 0 };
       }
@@ -150,6 +150,25 @@ const photoService = {
         : Promise.resolve([]),
     ]);
     const uploaderMap = new Map(uploaders.map((user) => [user.userId, user.username]));
+    const albumRows = photoIds.length
+      ? await orm
+        .select({ photoId: albumPhotoTab.photoId, albumId: albumTab.albumId, name: albumTab.name })
+        .from(albumPhotoTab)
+        .innerJoin(albumTab, eq(albumPhotoTab.albumId, albumTab.albumId))
+        .where(and(
+          inArray(albumPhotoTab.photoId, photoIds),
+          ...(isAdmin ? [] : [inArray(albumPhotoTab.albumId, visibleAlbumIds)]),
+        ))
+      : [];
+    const albumNameMap = new Map<string, string[]>();
+
+    for (const row of albumRows) {
+      const names = albumNameMap.get(row.photoId) ?? [];
+      if (!names.includes(row.name)) {
+        names.push(row.name);
+      }
+      albumNameMap.set(row.photoId, names);
+    }
 
     const result = list.map((photo) => {
       const fileStorage = fileStorageList.find((item) => item.storageId === photo.storageId);
@@ -168,6 +187,7 @@ const photoService = {
         exifMap.get(photo.photoId) ?? null,
         {
           uploaderName: uploaderMap.get(photo.userId) ?? null,
+          albumNames: albumNameMap.get(photo.photoId) ?? [],
           canDelete: isAdmin || Boolean(
             params.albumId
             && albumPermission?.canDeleteOwn
@@ -485,12 +505,24 @@ const photoService = {
         altitude: meta.altitude,
       });
 
+      const personalAlbum = await albumService.ensurePersonalAlbum(userId);
+      const uploadAlbumIds = Array.from(new Set([albumId, personalAlbum.albumId]));
       await albumService.addPhoto({
-        albumIds: [albumId],
+        albumIds: uploadAlbumIds,
         photoIds: [photo.photoId]
       }, userId);
+      const albumNames = (await orm
+        .select({ name: albumTab.name })
+        .from(albumTab)
+        .where(inArray(albumTab.albumId, uploadAlbumIds)))
+        .map((album) => album.name);
 
       const domain = formatHttpUrl(fileStorage.domain);
+      const [uploader] = await orm
+        .select({ username: userTab.username })
+        .from(userTab)
+        .where(eq(userTab.userId, userId))
+        .limit(1);
 
       return {
         photo: this.toPhotoVo(
@@ -506,7 +538,8 @@ const photoService = {
             altitude: meta.altitude,
           },
           {
-            uploaderName: null,
+            uploaderName: uploader?.username ?? null,
+            albumNames,
             canDelete: uploadPermission.isAdmin || uploadPermission.canDeleteOwn,
           },
         ),
@@ -749,7 +782,7 @@ const photoService = {
     fileStorage?: Storage,
     domain?: string,
     exifRow: Exif | null = null,
-    access: { uploaderName?: string | null; canDelete?: boolean } = {},
+    access: { uploaderName?: string | null; albumNames?: string[]; canDelete?: boolean } = {},
   ): PhotoVo {
     const key = this.getFileKey(files, FileTypeEnum.ORIGINAL) ?? '';
     const preview = this.getFileKey(files, FileTypeEnum.PREVIEW) ?? '';
@@ -759,6 +792,7 @@ const photoService = {
       ...photo,
       uploaderId: photo.userId,
       uploaderName: access.uploaderName ?? null,
+      albumNames: access.albumNames ?? [],
       canDelete: access.canDelete ?? false,
       exif: exifRow?.exif ?? null,
       latitude: exifRow?.latitude ?? null,

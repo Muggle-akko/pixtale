@@ -2,7 +2,7 @@
 
 import { Column, ColumnDef } from "@tanstack/react-table"
 import { IconCircleCheckFilled, IconCircleXFilled } from "@tabler/icons-react"
-import { ArrowUpDown, MoreHorizontal } from "lucide-react"
+import { ArrowUpDown, FolderKey, MoreHorizontal } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +23,7 @@ interface SortableHeaderProps {
 
 interface UserColumnsOptions {
   onEdit: (user: UserVo) => void
+  onPermissions: (user: UserVo) => void
   onToggleStatus: (userId: string) => void
   onDelete: (user: UserVo) => void
 }
@@ -71,7 +72,7 @@ function UserStatusBadge({ status }: { status: number }) {
 }
 
 // 创建带国际化文案的用户列表列配置。
-export function useUserColumns({ onEdit, onToggleStatus, onDelete }: UserColumnsOptions): ColumnDef<UserVo>[] {
+export function useUserColumns({ onEdit, onPermissions, onToggleStatus, onDelete }: UserColumnsOptions): ColumnDef<UserVo>[] {
   const t = useTranslations("users")
 
   return [
@@ -138,6 +139,12 @@ export function useUserColumns({ onEdit, onToggleStatus, onDelete }: UserColumns
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
+            {row.original.type === UserTypeEnum.NORMAL && (
+              <DropdownMenuItem onClick={() => onPermissions(row.original)}>
+                <FolderKey />
+                {t("albumPermissions")}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => onEdit(row.original)}>{t("edit")}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => onToggleStatus(row.original.userId)}>
               {row.original.status === UserStatusEnum.DISABLE ? t("enable") : t("disable")}

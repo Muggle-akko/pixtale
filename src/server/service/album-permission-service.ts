@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, inArray } from 'drizzle-orm';
 import BizError from '@/server/error/biz-error';
 import { albumMemberTab } from '@/server/entity/album-member';
 import { albumPhotoTab } from '@/server/entity/album-photo';
@@ -6,11 +6,12 @@ import { albumTab } from '@/server/entity/album';
 import { photoTab } from '@/server/entity/photo';
 import { userTab } from '@/server/entity/user';
 import { type AlbumMemberBatchSetBo, type AlbumMemberSetBo } from '@/server/entity/bo/album-member';
-import { type AlbumMemberVo, type AlbumPermission } from '@/server/entity/vo/album-member';
+import { type AlbumMemberVo, type AlbumPermission, type UserAlbumPermissionVo } from '@/server/entity/vo/album-member';
 import { UserTypeEnum } from '@/server/enums/user-enum';
 import { orm } from '@/server/infra/db';
 import { createId } from '@/server/lib/id';
 import { auditLogService } from '@/server/service/audit-log-service';
+import { AlbumKindEnum } from '@/server/enums/album-enum';
 
 // 这个模块集中处理共享相册的读取和写入权限。
 
@@ -224,14 +225,15 @@ const albumPermissionService = {
   },
 
   // 列出指定相册可授权的普通成员及其当前权限。
-  async listMembers(albumId: string): Promise<AlbumMemberVo[]> {
+  async listMembers(albumId: string, actorUserId: string): Promise<AlbumMemberVo[]> {
+    await this.assertAdmin(actorUserId);
     const [album] = await orm
-      .select({ albumId: albumTab.albumId })
+      .select({ albumId: albumTab.albumId, kind: albumTab.kind })
       .from(albumTab)
       .where(eq(albumTab.albumId, albumId))
       .limit(1);
 
-    if (!album) {
+    if (!album || album.kind === AlbumKindEnum.PERSONAL) {
       throw new BizError('auth.notFound', 404);
     }
 
@@ -268,6 +270,59 @@ const albumPermissionService = {
     });
   },
 
+  // 按成员列出全部共享相册及其当前权限，供用户管理页配置。
+  async listAlbumsForMember(userId: string, actorUserId: string): Promise<UserAlbumPermissionVo[]> {
+    await this.assertAdmin(actorUserId);
+    const [target] = await orm
+      .select({ userId: userTab.userId, type: userTab.type })
+      .from(userTab)
+      .where(eq(userTab.userId, userId))
+      .limit(1);
+
+    if (!target || target.type !== UserTypeEnum.NORMAL) {
+      throw new BizError('user.notFound');
+    }
+
+    const albums = await orm
+      .select()
+      .from(albumTab)
+      .where(eq(albumTab.kind, AlbumKindEnum.SHARED))
+      .orderBy(desc(albumTab.sort), desc(albumTab.createTime));
+
+    if (!albums.length) {
+      return [];
+    }
+
+    const albumIds = albums.map((album) => album.albumId);
+    const [permissions, photoStats] = await Promise.all([
+      orm.select()
+        .from(albumMemberTab)
+        .where(and(
+          eq(albumMemberTab.userId, userId),
+          inArray(albumMemberTab.albumId, albumIds),
+        )),
+      orm.select({ albumId: albumPhotoTab.albumId, photoTotal: count(photoTab.photoId) })
+        .from(albumPhotoTab)
+        .innerJoin(photoTab, eq(albumPhotoTab.photoId, photoTab.photoId))
+        .where(inArray(albumPhotoTab.albumId, albumIds))
+        .groupBy(albumPhotoTab.albumId),
+    ]);
+
+    return albums.map((album) => {
+      const permission = permissions.find((item) => item.albumId === album.albumId);
+      const photoStat = photoStats.find((item) => item.albumId === album.albumId);
+
+      return {
+        albumId: album.albumId,
+        name: album.name,
+        photoTotal: Number(photoStat?.photoTotal ?? 0),
+        canView: permission?.canView === 1,
+        canUpload: permission?.canUpload === 1,
+        canDeleteOwn: permission?.canDeleteOwn === 1,
+      };
+    });
+  },
+
   // 新增或更新成员在指定相册中的权限，关闭查看时删除授权记录。
   async setMemberPermission(params: AlbumMemberSetBo, actorUserId: string): Promise<void> {
     await this.assertAdmin(actorUserId);
@@ -293,12 +348,12 @@ const albumPermissionService = {
     }
 
     const [album] = await orm
-      .select({ albumId: albumTab.albumId, name: albumTab.name })
+      .select({ albumId: albumTab.albumId, name: albumTab.name, kind: albumTab.kind })
       .from(albumTab)
       .where(eq(albumTab.albumId, albumId))
       .limit(1);
 
-    if (!album) {
+    if (!album || album.kind === AlbumKindEnum.PERSONAL) {
       throw new BizError('auth.notFound', 404);
     }
 
@@ -353,6 +408,16 @@ const albumPermissionService = {
   // 删除成员在指定相册中的全部权限。
   async removeMemberPermission(albumId: string, userId: string, actorUserId: string): Promise<void> {
     await this.assertAdmin(actorUserId);
+    const [album] = await orm
+      .select({ kind: albumTab.kind })
+      .from(albumTab)
+      .where(eq(albumTab.albumId, albumId))
+      .limit(1);
+
+    if (!album || album.kind === AlbumKindEnum.PERSONAL) {
+      throw new BizError('auth.notFound', 404);
+    }
+
     await orm.delete(albumMemberTab).where(and(
       eq(albumMemberTab.albumId, albumId),
       eq(albumMemberTab.userId, userId),

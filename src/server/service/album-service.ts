@@ -15,6 +15,10 @@ import { FileTypeEnum } from '@/server/enums/file-enum';
 import { type File } from '@/server/entity/file';
 import { albumPermissionService } from '@/server/service/album-permission-service';
 import { auditLogService } from '@/server/service/audit-log-service';
+import { albumMemberTab } from '@/server/entity/album-member';
+import { userTab } from '@/server/entity/user';
+import { AlbumKindEnum } from '@/server/enums/album-enum';
+import { UserTypeEnum } from '@/server/enums/user-enum';
 
 // 这个模块处理相册数据写入相关业务。
 
@@ -40,6 +44,11 @@ const albumService = {
     }
 
     const fileStorageList = await storageService.list();
+    const owners = await orm
+      .select({ userId: userTab.userId, username: userTab.username })
+      .from(userTab)
+      .where(inArray(userTab.userId, Array.from(new Set(albumList.map((album) => album.userId)))));
+    const ownerMap = new Map(owners.map((owner) => [owner.userId, owner.username]));
 
     const photoStatList = await orm
       .select({
@@ -79,6 +88,7 @@ const albumService = {
 
       return {
         ...album,
+        ownerName: ownerMap.get(album.userId) ?? null,
         thumbnail: thumbnail ? toMediaUrl(thumbnail, domain, fileStorage?.type) : null,
         thumbHash: photoStat?.thumbHash ?? null,
         photoTotal: Number(photoStat?.photoTotal ?? 0),
@@ -88,6 +98,59 @@ const albumService = {
     });
 
     return list;
+  },
+
+  // 确保指定账号拥有一个受保护的个人上传相册，并修复其固定权限。
+  async ensurePersonalAlbum(userId: string): Promise<Album> {
+    const [user] = await orm
+      .select({ userId: userTab.userId, type: userTab.type })
+      .from(userTab)
+      .where(eq(userTab.userId, userId))
+      .limit(1);
+
+    if (!user) {
+      throw new BizError('user.notFound');
+    }
+
+    const [existingAlbum] = await orm
+      .select()
+      .from(albumTab)
+      .where(and(
+        eq(albumTab.userId, userId),
+        eq(albumTab.kind, AlbumKindEnum.PERSONAL),
+      ))
+      .limit(1);
+    const now = new Date().toISOString();
+    const album = existingAlbum ?? (await orm.insert(albumTab).values({
+      albumId: createId(),
+      name: '我上传的照片',
+      userId,
+      kind: AlbumKindEnum.PERSONAL,
+      sort: 0,
+      createTime: now,
+      updateTime: now,
+    }).returning())[0];
+
+    await orm.insert(albumMemberTab).values({
+      id: createId(),
+      albumId: album.albumId,
+      userId,
+      canView: 1,
+      canUpload: user.type === UserTypeEnum.DEMO ? 0 : 1,
+      canDeleteOwn: 0,
+      createTime: now,
+      updateTime: now,
+    }).onConflictDoUpdate({
+      target: [albumMemberTab.albumId, albumMemberTab.userId],
+      set: {
+        canView: 1,
+        canUpload: user.type === UserTypeEnum.DEMO ? 0 : 1,
+        canDeleteOwn: 0,
+        updateTime: now,
+      },
+    });
+
+    return album;
   },
 
   // 添加当前用户的相册，并阻止同一用户创建重复名称的相册。
@@ -120,6 +183,7 @@ const albumService = {
       albumId: createId(),
       name,
       userId,
+      kind: AlbumKindEnum.SHARED,
       sort: 0,
       createTime: now,
       updateTime: now,
@@ -244,6 +308,16 @@ const albumService = {
       throw new BizError('album.nameRequired');
     }
 
+    const [album] = await orm
+      .select({ kind: albumTab.kind })
+      .from(albumTab)
+      .where(eq(albumTab.albumId, params.albumId))
+      .limit(1);
+
+    if (album?.kind === AlbumKindEnum.PERSONAL) {
+      throw new BizError('album.personalProtected');
+    }
+
     await orm.update(albumTab)
       .set({
         name,
@@ -255,6 +329,16 @@ const albumService = {
   // 把当前用户指定相册置顶。
   async setTop(params: AlbumSetTopBo, userId: string): Promise<void> {
     await albumPermissionService.assertAdmin(userId);
+    const [album] = await orm
+      .select({ kind: albumTab.kind })
+      .from(albumTab)
+      .where(eq(albumTab.albumId, params.albumId))
+      .limit(1);
+
+    if (album?.kind === AlbumKindEnum.PERSONAL) {
+      throw new BizError('album.personalProtected');
+    }
+
     await orm.update(albumTab)
       .set({
         sort: Date.now(),
@@ -268,10 +352,14 @@ const albumService = {
 
     await albumPermissionService.assertAdmin(userId);
     const [album] = await orm
-      .select({ name: albumTab.name })
+      .select({ name: albumTab.name, kind: albumTab.kind })
       .from(albumTab)
       .where(eq(albumTab.albumId, params.albumId))
       .limit(1);
+
+    if (album?.kind === AlbumKindEnum.PERSONAL) {
+      throw new BizError('album.personalProtected');
+    }
 
     await orm.delete(albumPhotoTab)
       .where(eq(albumPhotoTab.albumId, params.albumId));
@@ -339,10 +427,12 @@ const albumService = {
       albumId: 'trash',
       name: 'trash.title',
       description: '',
+      kind: AlbumKindEnum.SHARED,
       sort: 0,
       createTime: now,
       updateTime: now,
       userId,
+      ownerName: null,
       thumbnail: thumbnail ? toMediaUrl(thumbnail, domain, fileStorage?.type) : null,
       thumbHash: coverPhoto?.thumbHash ?? null,
       photoTotal: photoList.length,

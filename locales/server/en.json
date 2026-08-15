@@ -7,6 +7,7 @@
   "auth.notFound": "Resource not found.",
   "album.nameRequired": "Album name is required.",
   "album.nameExists": "An album with this name already exists.",
+  "album.personalProtected": "System personal albums cannot be changed or deleted.",
   "album.selectRequired": "Select at least one album.",
   "photo.selectRequired": "Select at least one photo.",
   "photo.fileNameRequired": "File name is required.",

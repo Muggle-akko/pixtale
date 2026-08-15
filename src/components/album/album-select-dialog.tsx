@@ -14,6 +14,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item"
 import { useAlbumStore } from "@/store/album-store"
+import { AlbumKindEnum } from "@/server/enums/album-enum"
 
 interface AlbumSelectDialogProps {
   open: boolean
@@ -25,6 +26,7 @@ interface AlbumSelectDialogProps {
 export function AlbumSelectDialog({ open, onOpenChange, onAlbumSelect }: AlbumSelectDialogProps) {
   const t = useTranslations("albums")
   const albums = useAlbumStore((state) => state.albums)
+  const sharedAlbums = albums.filter((album) => album.kind === AlbumKindEnum.SHARED)
   // selectedAlbumIds 保存当前选中的相册 id 列表。
   const [selectedAlbumIds, setSelectedAlbumIds] = useState<string[]>([])
 
@@ -69,14 +71,14 @@ export function AlbumSelectDialog({ open, onOpenChange, onAlbumSelect }: AlbumSe
       onConfirm={saveAlbum}
     >
       <div className="flex flex-col gap-3 max-h-[60vh] overflow-auto pb-0.25">
-        {!albums.length && (
+        {!sharedAlbums.length && (
           <div className="py-8 text-center text-sm text-muted-foreground">
             {t("empty")}
           </div>
         )}
-        {!!albums.length && (
+        {!!sharedAlbums.length && (
           <ItemGroup className="gap-2">
-            {albums.map((album) => (
+            {sharedAlbums.map((album) => (
               <Item
                 key={album.albumId}
                 variant="outline"

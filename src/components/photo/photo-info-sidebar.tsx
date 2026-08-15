@@ -147,6 +147,8 @@ export function PhotoInfoSidebar({ photo, onClose }: PhotoInfoSidebarProps) {
           <div className="px-4 pt-6.5 md:pt-4.5 text-sm font-medium">{t("basicInformation")}</div>
           <div className="space-y-1.5 px-4 py-2">
             <PhotoInfoRow label={t("fileName")} value={formatPhotoName(photo.name)} twoLines />
+            <PhotoInfoRow label={t("uploader")} value={photo.uploaderName ?? t("unknownUploader")} />
+            <PhotoInfoRow label={t("albums")} value={photo.albumNames.join("、") || t("noAlbum")} wrap />
             <PhotoInfoRow label={t("format")} value={photo.typeDesc.toUpperCase()} />
             <PhotoInfoRow label={t("fileSize")} value={formatFileSize(photo.size)} />
             <PhotoInfoRow label={t("resolution")} value={formatResolution(photo.width, photo.height)} />

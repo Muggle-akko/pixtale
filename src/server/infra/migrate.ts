@@ -223,6 +223,56 @@ const migrationList = [
           ON audit_log (actor_user_id, create_time)`,
     ],
   },
+  {
+    version: '2026081505_personal_album',
+    sqlList: [
+      `ALTER TABLE album ADD COLUMN kind INTEGER NOT NULL DEFAULT 1`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_album_personal_owner
+          ON album (user_id) WHERE kind = 2`,
+      `INSERT OR IGNORE INTO album (
+          album_id, name, description, kind, sort, create_time, update_time, user_id
+      )
+      SELECT
+          'personal-' || user_id,
+          '我上传的照片',
+          '',
+          2,
+          0,
+          strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+          strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+          user_id
+      FROM user
+      WHERE type <> 3`,
+      `INSERT OR IGNORE INTO album_member (
+          id, album_id, user_id, can_view, can_upload, can_delete_own, create_time, update_time
+      )
+      SELECT
+          'personal-member-' || user.user_id,
+          album.album_id,
+          user.user_id,
+          1,
+          1,
+          0,
+          strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+          strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+      FROM user
+      INNER JOIN album ON album.user_id = user.user_id AND album.kind = 2
+      WHERE user.type <> 3`,
+      `INSERT INTO album_photo (id, photo_id, album_id)
+      SELECT
+          'personal-photo-' || photo.photo_id,
+          photo.photo_id,
+          album.album_id
+      FROM photo
+      INNER JOIN album ON album.user_id = photo.user_id AND album.kind = 2
+      WHERE NOT EXISTS (
+          SELECT 1
+          FROM album_photo
+          WHERE album_photo.photo_id = photo.photo_id
+            AND album_photo.album_id = album.album_id
+      )`,
+    ],
+  },
 ];
 
 // 在 Turso 上顺序执行尚未应用的版本化迁移。

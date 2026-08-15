@@ -7,6 +7,7 @@
   "auth.notFound": "资源不存在",
   "album.nameRequired": "相册名不能为空",
   "album.nameExists": "相册名已存在",
+  "album.personalProtected": "系统个人相册不能修改或删除",
   "album.selectRequired": "请选择相册",
   "photo.selectRequired": "请选择照片",
   "photo.fileNameRequired": "文件名不能为空",

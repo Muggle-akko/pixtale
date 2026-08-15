@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { AlertDialogDestructive } from "@/components/common/alert-destructive"
 import { UserAddDialog } from "@/components/user/user-add-dialog"
+import { UserAlbumPermissionDialog } from "@/components/user/user-album-permission-dialog"
 import { DataTable } from "@/components/user/user-data-table"
 import { Button } from "@/components/ui/button"
 import {
@@ -40,6 +41,8 @@ export default function Page() {
   const [editOpen, setEditOpen] = useState(false)
   // editingUser 保存当前正在编辑的用户。
   const [editingUser, setEditingUser] = useState<UserVo | null>(null)
+  // permissionUser 保存当前正在配置相册权限的成员。
+  const [permissionUser, setPermissionUser] = useState<UserVo | null>(null)
   // deleteOpen 控制删除确认弹框的打开状态。
   const [deleteOpen, setDeleteOpen] = useState(false)
   // deletingUser 保存当前等待删除确认的用户。
@@ -68,6 +71,11 @@ export default function Page() {
   function openEditUser(user: UserVo) {
     setEditingUser(user)
     setEditOpen(true)
+  }
+
+  // 打开指定成员的共享相册权限弹框。
+  function openUserPermissions(user: UserVo) {
+    setPermissionUser(user)
   }
 
   // 提交修改用户信息。
@@ -133,6 +141,7 @@ export default function Page() {
 
   const columns = useUserColumns({
     onEdit: openEditUser,
+    onPermissions: openUserPermissions,
     onToggleStatus: toggleUserStatus,
     onDelete: openDeleteUser,
   })
@@ -192,6 +201,15 @@ export default function Page() {
         title={t("deleteTitle")}
         description={t("deleteDescription")}
         onConfirm={confirmDeleteUser}
+      />
+      <UserAlbumPermissionDialog
+        open={Boolean(permissionUser)}
+        user={permissionUser}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPermissionUser(null)
+          }
+        }}
       />
     </>
   )

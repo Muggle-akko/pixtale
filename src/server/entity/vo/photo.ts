@@ -5,6 +5,7 @@ import { type Photo } from '@/server/entity/photo';
 type PhotoVo = Photo & {
   uploaderId: string;
   uploaderName: string | null;
+  albumNames: string[];
   canDelete: boolean;
   key: string;
   preview: string;

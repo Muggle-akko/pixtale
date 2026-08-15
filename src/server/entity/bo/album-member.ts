@@ -4,6 +4,10 @@ interface AlbumMemberListBo {
   albumId: string;
 }
 
+interface AlbumMemberUserListBo {
+  userId: string;
+}
+
 interface AlbumMemberSetBo {
   albumId: string;
   userId: string;
@@ -25,4 +29,4 @@ interface AlbumMemberBatchSetBo {
   canDeleteOwn: boolean;
 }
 
-export type { AlbumMemberBatchSetBo, AlbumMemberListBo, AlbumMemberRemoveBo, AlbumMemberSetBo };
+export type { AlbumMemberBatchSetBo, AlbumMemberListBo, AlbumMemberRemoveBo, AlbumMemberSetBo, AlbumMemberUserListBo };

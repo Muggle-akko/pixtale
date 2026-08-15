@@ -37,6 +37,7 @@ import { UserTypeEnum } from "@/server/enums/user-enum"
 import { BLOB_STORAGE_ID } from "@/server/lib/blob"
 import { useTranslations } from "next-intl"
 import { useAlbumStore } from "@/store/album-store"
+import { AlbumKindEnum } from "@/server/enums/album-enum"
 
 // Vercel 构建会注入 NEXT_PUBLIC_VERCEL_ENV，本地开发默认关闭。
 const useDirectUpload = Boolean(process.env.NEXT_PUBLIC_VERCEL_ENV)
@@ -185,7 +186,10 @@ export function PhotoUploadDialog() {
   const selectedStorageId = storageId ?? storages[0]?.storageId ?? null
   // targetAlbumId 保存从照片总览上传时手动选择的目标相册。
   const [targetAlbumId, setTargetAlbumId] = useState<string | null>(null)
-  const uploadableAlbums = albums.filter((album) => album.canUpload)
+  const uploadableAlbums = albums.filter((album) => (
+    album.canUpload
+    && (album.kind === AlbumKindEnum.SHARED || album.userId === userInfo?.userId)
+  ))
   const selectedAlbumId = uploadAlbumId ?? targetAlbumId ?? uploadableAlbums[0]?.albumId ?? null
 
   useEffect(() => {
