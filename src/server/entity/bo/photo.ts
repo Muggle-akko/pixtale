@@ -3,6 +3,8 @@
 interface PhotoTakenDateListBo {
   favorite?: number | null;
   albumId?: string | null;
+  // mine 为 true 时只统计当前用户上传且仍有查看权限的照片。
+  mine?: boolean | null;
   // tzOffset 为相对 UTC 的偏移分钟数，东八区为 480。
   tzOffset: number;
 
@@ -17,6 +19,8 @@ interface PhotoListBo {
   favorite?: number | null;
   status?: number | null;
   albumId?: string | null;
+  // mine 为 true 时只返回当前用户上传且仍有查看权限的照片。
+  mine?: boolean | null;
 
 }
 

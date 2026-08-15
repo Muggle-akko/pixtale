@@ -23,7 +23,7 @@ import { PhotoFavoriteEnum } from "@/server/enums/photo-enum"
 import { photoFavorite, photoRecycle } from "@/request/photo"
 import { albumAddPhoto } from "@/request/album"
 import { usePhotoStore } from "@/store/photo-store"
-import { Plus } from "lucide-react"
+import { ListChecks, Plus } from "lucide-react"
 import { PhotoDateDrawer } from "@/components/photo/photo-date-drawer"
 import { PhotoMasonrySkeleton } from "@/components/photo/photo-masonry-skeleton"
 import { usePhotoContext } from "./provider"
@@ -62,6 +62,10 @@ export default function Page() {
   } = usePhotoList({}, PHOTO_LIST_PAGE_SIZE, initialPhotos)
   const [modelPhotoIndex, setModelPhotoIndex] = useState(0)
   const [showPhotoViewer, setShowPhotoViewer] = useState(false)
+  // selectAllSignal 控制瀑布流选中当前已加载的全部可操作照片。
+  const [selectAllSignal, setSelectAllSignal] = useState(0)
+  // selectedPhotoCount 保存当前已选照片数量，显示在多选按钮上。
+  const [selectedPhotoCount, setSelectedPhotoCount] = useState(0)
   // albumDialogOpen 控制加入相册弹框的打开状态。
   const [albumDialogOpen, setAlbumDialogOpen] = useState(false)
   // albumPhotoIds 保存本次要加入相册的照片 id。
@@ -190,6 +194,17 @@ export default function Page() {
                   <Plus />
                 </Button>
               )}
+              {isAdmin && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="gap-1.5 px-2 text-xs"
+                  onClick={() => setSelectAllSignal((value) => value + 1)}
+                >
+                  <ListChecks className="size-4" />
+                  <span>{selectedPhotoCount ? t("selectedPhotos", { count: selectedPhotoCount }) : t("selectPhotos")}</span>
+                </Button>
+              )}
             </div>
           </header>
           <div className="px-1 md:pl-1 md:pr-0">
@@ -202,6 +217,8 @@ export default function Page() {
                 onPhotoFavorite={changePhotoFavorite}
                 onPhotoDelete={isAdmin ? recyclePhotos : undefined}
                 onAlbumOpen={isAdmin ? openAlbumDialog : undefined}
+                selectAllSignal={selectAllSignal}
+                onSelectionChange={setSelectedPhotoCount}
               />
             ) : (
               <PhotoMasonrySkeleton photos={initialPhotos} />

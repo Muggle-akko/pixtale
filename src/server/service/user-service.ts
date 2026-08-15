@@ -19,8 +19,6 @@ import { albumTab } from '@/server/entity/album';
 import { photoFavoriteTab } from '@/server/entity/photo-favorite';
 import { photoCommentTab } from '@/server/entity/photo-comment';
 import { auditLogService } from '@/server/service/audit-log-service';
-import { albumService } from '@/server/service/album-service';
-import { albumPhotoTab } from '@/server/entity/album-photo';
 import { AlbumKindEnum } from '@/server/enums/album-enum';
 
 // 这个模块处理用户数据查询和写入相关业务。
@@ -46,7 +44,6 @@ const userService = {
       .limit(1);
 
     if (user) {
-      await albumService.ensurePersonalAlbum(user.userId);
       console.warn('ADMIN user already exists, skip creating');
       return;
     }
@@ -236,10 +233,6 @@ const userService = {
       createTime: now,
     });
 
-    if (params.type !== UserTypeEnum.DEMO) {
-      await albumService.ensurePersonalAlbum(userId);
-    }
-
   },
 
   // 修改用户信息。
@@ -378,19 +371,6 @@ const userService = {
       .where(eq(userTab.userId, deleteUserId))
       .limit(1);
 
-    const [personalAlbum] = await orm
-      .select({ albumId: albumTab.albumId })
-      .from(albumTab)
-      .where(and(
-        eq(albumTab.userId, deleteUserId),
-        eq(albumTab.kind, AlbumKindEnum.PERSONAL),
-      ))
-      .limit(1);
-    const uploadedPhotos = await orm
-      .select({ photoId: photoTab.photoId })
-      .from(photoTab)
-      .where(eq(photoTab.userId, deleteUserId));
-
     if (user?.avatar) {
       await orm.delete(avatarBase64Tab)
         .where(eq(avatarBase64Tab.id, user.avatar));
@@ -399,23 +379,6 @@ const userService = {
     await orm.update(photoTab)
       .set({ userId: adminUserId })
       .where(eq(photoTab.userId, deleteUserId));
-
-    const adminPersonalAlbum = await albumService.ensurePersonalAlbum(adminUserId);
-    if (uploadedPhotos.length) {
-      await albumService.addPhoto({
-        albumIds: [adminPersonalAlbum.albumId],
-        photoIds: uploadedPhotos.map((photo) => photo.photoId),
-      }, adminUserId);
-    }
-
-    if (personalAlbum) {
-      await orm.delete(albumPhotoTab)
-        .where(eq(albumPhotoTab.albumId, personalAlbum.albumId));
-      await orm.delete(albumMemberTab)
-        .where(eq(albumMemberTab.albumId, personalAlbum.albumId));
-      await orm.delete(albumTab)
-        .where(eq(albumTab.albumId, personalAlbum.albumId));
-    }
 
     await orm.update(albumTab)
       .set({ userId: adminUserId })

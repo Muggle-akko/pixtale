@@ -77,13 +77,6 @@ async function main() {
       status: 1,
       createTime: now,
     })))
-    await Promise.all(users.map((user) => albumService.ensurePersonalAlbum(user.userId)))
-    const personalAlbums = await orm.select().from(albumTab).where(require('drizzle-orm').eq(albumTab.kind, AlbumKindEnum.PERSONAL))
-    const personalAlbumByUser = new Map(personalAlbums.map((album) => [album.userId, album]))
-    const memberAPersonalAlbum = personalAlbumByUser.get('member-a')
-    const adminPersonalAlbum = personalAlbumByUser.get('admin')
-    assert.ok(memberAPersonalAlbum)
-    assert.ok(adminPersonalAlbum)
     await orm.insert(albumTab).values([
       { albumId: 'album-visible', name: 'Visible', userId: 'admin', kind: AlbumKindEnum.SHARED, sort: 0, createTime: now, updateTime: now },
       { albumId: 'album-hidden', name: 'Hidden', userId: 'admin', kind: AlbumKindEnum.SHARED, sort: 0, createTime: now, updateTime: now },
@@ -95,11 +88,8 @@ async function main() {
     ])
     await orm.insert(albumPhotoTab).values([
       { id: 'link-own', albumId: 'album-visible', photoId: 'photo-own' },
-      { id: 'link-own-personal', albumId: memberAPersonalAlbum.albumId, photoId: 'photo-own' },
       { id: 'link-admin', albumId: 'album-hidden', photoId: 'photo-admin' },
-      { id: 'link-admin-personal', albumId: adminPersonalAlbum.albumId, photoId: 'photo-admin' },
       { id: 'link-orphan', albumId: 'album-visible', photoId: 'photo-orphan' },
-      { id: 'link-orphan-personal', albumId: memberAPersonalAlbum.albumId, photoId: 'photo-orphan' },
     ])
     await orm.insert(fileTab).values({
       fileId: 'media-file',
@@ -127,29 +117,11 @@ async function main() {
       canDeleteOwn: false,
     }, 'admin')
 
-    assert.deepEqual((await albumPermissionService.listVisibleAlbumIds('member-a')).sort(), ['album-visible', memberAPersonalAlbum.albumId].sort())
-    assert.deepEqual((await albumPermissionService.listVisibleAlbumIds('admin')).sort(), ['album-hidden', 'album-visible', ...personalAlbums.map((album) => album.albumId)].sort())
-    const personalPermission = await albumPermissionService.getAlbumPermission('member-a', memberAPersonalAlbum.albumId)
-    assert.equal(personalPermission?.canView, true)
-    assert.equal(personalPermission?.canUpload, true)
-    assert.equal(personalPermission?.canDeleteOwn, false)
+    assert.deepEqual((await albumPermissionService.listVisibleAlbumIds('member-a')).sort(), ['album-visible'])
+    assert.deepEqual((await albumPermissionService.listVisibleAlbumIds('admin')).sort(), ['album-hidden', 'album-visible'])
     await assert.rejects(
       () => albumPermissionService.listMembers('album-visible', 'member-a'),
       (error) => error.code === 403,
-    )
-    await assert.rejects(
-      () => albumPermissionService.listMembers(memberAPersonalAlbum.albumId, 'admin'),
-      (error) => error.code === 404,
-    )
-    await assert.rejects(
-      () => albumPermissionService.setMemberPermission({
-        albumId: memberAPersonalAlbum.albumId,
-        userId: 'member-b',
-        canView: true,
-        canUpload: false,
-        canDeleteOwn: false,
-      }, 'admin'),
-      (error) => error.code === 404,
     )
     assert.deepEqual(
       (await albumPermissionService.listAlbumsForMember('member-a', 'admin')).map((album) => album.albumId).sort(),
@@ -210,9 +182,20 @@ async function main() {
       () => photoCommentService.add({ photoId: 'photo-own', body: 'bad position', xRatio: 1.1, yRatio: 0.5 }, 'member-a'),
     )
 
+    const myUploads = await photoService.list({ size: 20, mine: true }, 'member-a')
+    assert.deepEqual(myUploads.list.map((photo) => photo.photoId).sort(), ['photo-orphan', 'photo-own'])
+    assert.equal(myUploads.list.every((photo) => photo.canDelete), true)
+    await photoService.recycle({ photoIds: ['photo-own'] }, 'member-a')
+    const recycledOwn = await orm.select({ status: photoTab.status }).from(photoTab).where(require('drizzle-orm').eq(photoTab.photoId, 'photo-own')).limit(1)
+    assert.equal(recycledOwn[0].status, 2)
+    await assert.rejects(
+      () => photoService.recycle({ photoIds: ['photo-admin'] }, 'member-a'),
+      (error) => error.code === 403,
+    )
+
     await albumService.removePhoto({ albumId: 'album-visible', photoIds: ['photo-orphan'] }, 'member-a')
     const orphan = await orm.select({ status: photoTab.status }).from(photoTab).where(require('drizzle-orm').eq(photoTab.photoId, 'photo-orphan')).limit(1)
-    assert.equal(orphan[0].status, 1)
+    assert.equal(orphan[0].status, 2)
 
     await userService.delete('member-a', 'admin')
     const retainedComment = (await photoCommentService.list('photo-own', 'admin')).find((item) => item.commentId === comment.commentId)
@@ -220,15 +203,13 @@ async function main() {
     assert.equal(retainedComment.authorName, 'member-a')
     assert.equal((await orm.select().from(albumMemberTab)).some((item) => item.userId === 'member-a'), false)
     assert.equal((await orm.select().from(photoFavoriteTab)).some((item) => item.userId === 'member-a'), false)
-    assert.equal((await orm.select().from(albumTab)).some((item) => item.albumId === memberAPersonalAlbum.albumId), false)
-    assert.equal((await orm.select().from(albumPhotoTab)).some((item) => item.albumId === adminPersonalAlbum.albumId && item.photoId === 'photo-own'), true)
 
     const auditLogs = await auditLogService.list('admin')
     assert.equal(auditLogs.some((item) => item.action === 'album.permission.set'), true)
     assert.equal(auditLogs.some((item) => item.action === 'album.photo.remove'), true)
     assert.equal(auditLogs.some((item) => item.action === 'user.delete'), true)
 
-    // 真实上传后必须立刻返回上传者信息，并同时关联共享相册和个人相册。
+    // 真实上传后必须立刻返回上传者信息，并只关联被选中的共享相册。
     const png = fs.readFileSync(path.join(projectRoot, 'public/logo.png'))
     const uploadForm = new FormData()
     uploadForm.set('file', new File([png], 'compensation.png', { type: 'image/png' }))
@@ -239,9 +220,9 @@ async function main() {
     const uploadResult = await photoService.add(uploadForm, 'admin')
     assert.equal(uploadResult.duplicate, false)
     assert.equal(uploadResult.photo?.uploaderName, 'admin')
-    assert.deepEqual(uploadResult.photo?.albumNames.sort(), ['Visible', '我上传的照片'].sort())
+    assert.deepEqual(uploadResult.photo?.albumNames, ['Visible'])
     const uploadLinks = await orm.select().from(albumPhotoTab).where(require('drizzle-orm').eq(albumPhotoTab.photoId, uploadResult.photo?.photoId))
-    assert.deepEqual(uploadLinks.map((item) => item.albumId).sort(), ['album-visible', adminPersonalAlbum.albumId].sort())
+    assert.deepEqual(uploadLinks.map((item) => item.albumId), ['album-visible'])
 
     console.log(`Shared album verification passed (${auditLogs.length} audit events).`)
   } finally {

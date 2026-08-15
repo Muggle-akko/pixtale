@@ -45,6 +45,7 @@ import { photoFavoriteTab } from '@/server/entity/photo-favorite';
 import { photoFavoriteService } from '@/server/service/photo-favorite-service';
 import { photoCommentTab } from '@/server/entity/photo-comment';
 import { auditLogService } from '@/server/service/audit-log-service';
+import { AlbumKindEnum } from '@/server/enums/album-enum';
 
 // 这个模块处理照片上传、列表、回收站等业务。
 
@@ -65,6 +66,10 @@ const photoService = {
     const favoritePhotoIdSet = new Set(favoritePhotoIds);
 
     const whereList = [eq(photoTab.status, status)];
+
+    if (params.mine) {
+      whereList.push(eq(photoTab.userId, userId));
+    }
 
     if (params.favorite) {
       if (params.favorite === PhotoFavoriteEnum.YES) {
@@ -169,6 +174,9 @@ const photoService = {
       }
       albumNameMap.set(row.photoId, names);
     }
+    const deleteOwnPhotoIds = params.mine && !isAdmin
+      ? await this.listDeletableOwnPhotoIds(userId, photoIds)
+      : new Set<string>();
 
     const result = list.map((photo) => {
       const fileStorage = fileStorageList.find((item) => item.storageId === photo.storageId);
@@ -188,11 +196,13 @@ const photoService = {
         {
           uploaderName: uploaderMap.get(photo.userId) ?? null,
           albumNames: albumNameMap.get(photo.photoId) ?? [],
-          canDelete: isAdmin || Boolean(
-            params.albumId
-            && albumPermission?.canDeleteOwn
-            && photo.userId === userId
-          ),
+          canDelete: params.mine
+            ? isAdmin || deleteOwnPhotoIds.has(photo.photoId)
+            : isAdmin || Boolean(
+              params.albumId
+              && albumPermission?.canDeleteOwn
+              && photo.userId === userId
+            ),
         },
       );
     });
@@ -210,6 +220,10 @@ const photoService = {
       eq(photoTab.status, PhotoStatusEnum.NORMAL),
       isNotNull(photoTab.takenTime),
     ];
+
+    if (params.mine) {
+      whereList.push(eq(photoTab.userId, userId));
+    }
 
     if (params.favorite) {
       const favoritePhotoIds = await photoFavoriteService.listPhotoIds(userId);
@@ -505,16 +519,14 @@ const photoService = {
         altitude: meta.altitude,
       });
 
-      const personalAlbum = await albumService.ensurePersonalAlbum(userId);
-      const uploadAlbumIds = Array.from(new Set([albumId, personalAlbum.albumId]));
       await albumService.addPhoto({
-        albumIds: uploadAlbumIds,
+        albumIds: [albumId],
         photoIds: [photo.photoId]
       }, userId);
       const albumNames = (await orm
         .select({ name: albumTab.name })
         .from(albumTab)
-        .where(inArray(albumTab.albumId, uploadAlbumIds)))
+        .where(eq(albumTab.albumId, albumId)))
         .map((album) => album.name);
 
       const domain = formatHttpUrl(fileStorage.domain);
@@ -576,7 +588,13 @@ const photoService = {
       throw new BizError('photo.selectRequired');
     }
 
-    await albumPermissionService.assertAdmin(userId);
+    if (!await albumPermissionService.isAdmin(userId)) {
+      const deletablePhotoIds = await this.listDeletableOwnPhotoIds(userId, params.photoIds);
+
+      if (deletablePhotoIds.size !== new Set(params.photoIds).size) {
+        throw new BizError('auth.forbidden', 403);
+      }
+    }
 
     await orm.update(photoTab)
       .set({
@@ -602,6 +620,50 @@ const photoService = {
         recycleTime: new Date(0).toISOString()
       })
       .where(eq(photoTab.userId, userId));
+  },
+
+  // 返回当前用户可从全部共享相册删除的本人照片 id。
+  async listDeletableOwnPhotoIds(userId: string, photoIds: string[]): Promise<Set<string>> {
+    const uniquePhotoIds = Array.from(new Set(photoIds));
+
+    if (!uniquePhotoIds.length) {
+      return new Set();
+    }
+
+    const [ownedPhotos, links] = await Promise.all([
+      orm.select({ photoId: photoTab.photoId })
+        .from(photoTab)
+        .where(and(
+          eq(photoTab.userId, userId),
+          eq(photoTab.status, PhotoStatusEnum.NORMAL),
+          inArray(photoTab.photoId, uniquePhotoIds),
+        )),
+      orm.select({ photoId: albumPhotoTab.photoId, albumId: albumPhotoTab.albumId })
+        .from(albumPhotoTab)
+        .innerJoin(albumTab, eq(albumPhotoTab.albumId, albumTab.albumId))
+        .where(and(
+          eq(albumTab.kind, AlbumKindEnum.SHARED),
+          inArray(albumPhotoTab.photoId, uniquePhotoIds),
+        )),
+    ]);
+    const permissionMap = await albumPermissionService.listPermissions(
+      userId,
+      Array.from(new Set(links.map((link) => link.albumId))),
+    );
+    const albumIdsByPhoto = new Map<string, string[]>();
+
+    for (const link of links) {
+      const albumIds = albumIdsByPhoto.get(link.photoId) ?? [];
+      albumIds.push(link.albumId);
+      albumIdsByPhoto.set(link.photoId, albumIds);
+    }
+
+    return new Set(ownedPhotos
+      .map((photo) => photo.photoId)
+      .filter((photoId) => {
+        const albumIds = albumIdsByPhoto.get(photoId) ?? [];
+        return albumIds.length > 0 && albumIds.every((albumId) => permissionMap.get(albumId)?.canDeleteOwn);
+      }));
   },
 
   // 设置当前用户指定照片的收藏状态。

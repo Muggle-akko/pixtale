@@ -186,10 +186,7 @@ export function PhotoUploadDialog() {
   const selectedStorageId = storageId ?? storages[0]?.storageId ?? null
   // targetAlbumId 保存从照片总览上传时手动选择的目标相册。
   const [targetAlbumId, setTargetAlbumId] = useState<string | null>(null)
-  const uploadableAlbums = albums.filter((album) => (
-    album.canUpload
-    && (album.kind === AlbumKindEnum.SHARED || album.userId === userInfo?.userId)
-  ))
+  const uploadableAlbums = albums.filter((album) => album.canUpload && album.kind === AlbumKindEnum.SHARED)
   const selectedAlbumId = uploadAlbumId ?? targetAlbumId ?? uploadableAlbums[0]?.albumId ?? null
 
   useEffect(() => {
@@ -553,6 +550,11 @@ export function PhotoUploadDialog() {
               ))}
             </SelectContent>
           </Select>
+          {selectedAlbumId && !uploadAlbumId && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("defaultAlbumHint", { album: uploadableAlbums.find((album) => album.albumId === selectedAlbumId)?.name ?? "" })}
+            </p>
+          )}
         </DialogHeader>
         <div className="min-h-0 overflow-y-auto [scrollbar-width:thin]">
           <div className="grid grid-cols-3 content-start gap-1 md:grid-cols-4">

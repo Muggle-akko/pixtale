@@ -21,6 +21,8 @@ interface PhotoDateDrawerProps {
   albumId?: string | null
   // favorite 传入时按收藏状态筛选时间范围。
   favorite?: number | null
+  // mine 传入时只按当前用户上传的照片筛选时间范围。
+  mine?: boolean | null
   // onRangeChange 在时间范围确认变更后传给页面。
   onRangeChange?: (range: { startDate: Date, endDate: Date }) => void
 }
@@ -43,7 +45,7 @@ function formatDate(date: Date) {
 }
 
 // 渲染照片页按天选择时间范围的右侧抽屉。
-function PhotoDateDrawer({ albumId, favorite, onRangeChange }: PhotoDateDrawerProps) {
+function PhotoDateDrawer({ albumId, favorite, mine, onRangeChange }: PhotoDateDrawerProps) {
   const t = useTranslations("photos")
   const [dateList, setDateList] = useState<PhotoTakenDateVo[]>([]) // dateList 保存存在照片的日期及照片数量。
   const [open, setOpen] = useState(false) // open 控制时间选择抽屉是否打开。
@@ -56,6 +58,7 @@ function PhotoDateDrawer({ albumId, favorite, onRangeChange }: PhotoDateDrawerPr
     photoTakenDateList({
       albumId,
       favorite,
+      mine,
       tzOffset: getLocalTzOffsetMin(),
     }).then((data) => {
       const fullRange = [0, Math.max(0, data.length - 1)]
@@ -64,7 +67,7 @@ function PhotoDateDrawer({ albumId, favorite, onRangeChange }: PhotoDateDrawerPr
       setDateRange(fullRange)
       setSavedDateRange(fullRange)
     })
-  }, [albumId, favorite])
+  }, [albumId, favorite, mine])
 
   // 切换抽屉打开状态，非保存关闭时恢复到上次确认的时间范围。
   function changeOpen(nextOpen: boolean) {

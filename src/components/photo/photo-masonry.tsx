@@ -24,6 +24,10 @@ interface PhotoMasonryProps {
   onPhotoRestore?: (photoIds: string[]) => void
   onAlbumOpen?: (photoIds: string[]) => void
   onAlbumRemove?: (photoIds: string[]) => void
+  // selectAllSignal 递增时选中当前已加载的全部可操作照片。
+  selectAllSignal?: number
+  // onSelectionChange 通知父页面当前选中的照片数量。
+  onSelectionChange?: (count: number) => void
 }
 
 // 把 rem 单位转换为当前根字号下的 px。
@@ -84,6 +88,8 @@ const PhotoMasonry = memo(function PhotoMasonry({
   onPhotoRestore,
   onAlbumOpen,
   onAlbumRemove,
+  selectAllSignal = 0,
+  onSelectionChange,
 }: PhotoMasonryProps) {
   const { sidebarOpen } = useApp()
   // isMobile 判断当前是否为移动端视口。
@@ -116,6 +122,10 @@ const PhotoMasonry = memo(function PhotoMasonry({
   const visibleSelectedPhotoIds = selectedPhotoIds.filter((photoId) => photos.some((photo) => photo.photoId === photoId))
   const selectedPhotos = photos.filter((photo) => visibleSelectedPhotoIds.includes(photo.photoId))
   const canDeleteSelected = selectedPhotos.length > 0 && selectedPhotos.every((photo) => photo.canDelete)
+
+  useEffect(() => {
+    onSelectionChange?.(visibleSelectedPhotoIds.length)
+  }, [onSelectionChange, visibleSelectedPhotoIds.length])
 
 
   useEffect(() => {
@@ -293,6 +303,14 @@ const PhotoMasonry = memo(function PhotoMasonry({
       return [...visibleIds, ...idsToAdd]
     })
   }
+
+  useEffect(() => {
+    if (!selectAllSignal) {
+      return
+    }
+
+    selectFirstPhotos()
+  }, [selectAllSignal])
 
   // 清空选中状态后把当前选中的照片 id 传给页面删除。
   function deleteSelectedPhotos() {

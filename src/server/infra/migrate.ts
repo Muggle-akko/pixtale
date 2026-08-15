@@ -273,6 +273,17 @@ const migrationList = [
       )`,
     ],
   },
+  {
+    version: '2026081506_virtual_my_uploads',
+    sqlList: [
+      `DELETE FROM album_photo
+      WHERE album_id IN (SELECT album_id FROM album WHERE kind = 2)`,
+      `DELETE FROM album_member
+      WHERE album_id IN (SELECT album_id FROM album WHERE kind = 2)`,
+      `DELETE FROM album WHERE kind = 2`,
+      `DROP INDEX IF EXISTS idx_album_personal_owner`,
+    ],
+  },
 ];
 
 // 在 Turso 上顺序执行尚未应用的版本化迁移。

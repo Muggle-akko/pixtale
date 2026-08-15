@@ -38,7 +38,10 @@ const albumPermissionService = {
   // 列出当前用户可见的全部相册 id，管理员默认拥有全部相册权限。
   async listVisibleAlbumIds(userId: string): Promise<string[]> {
     if (await this.isAdmin(userId)) {
-      const albums = await orm.select({ albumId: albumTab.albumId }).from(albumTab);
+      const albums = await orm
+        .select({ albumId: albumTab.albumId })
+        .from(albumTab)
+        .where(eq(albumTab.kind, AlbumKindEnum.SHARED));
       return albums.map((album) => album.albumId);
     }
 
@@ -49,6 +52,7 @@ const albumPermissionService = {
       .where(and(
         eq(albumMemberTab.userId, userId),
         eq(albumMemberTab.canView, 1),
+        eq(albumTab.kind, AlbumKindEnum.SHARED),
       ));
 
     return rows.map((row) => row.albumId);
@@ -100,12 +104,12 @@ const albumPermissionService = {
   // 查询当前用户在指定相册中的有效权限。
   async getAlbumPermission(userId: string, albumId: string): Promise<AlbumPermission | null> {
     const [album] = await orm
-      .select({ albumId: albumTab.albumId })
+      .select({ albumId: albumTab.albumId, kind: albumTab.kind })
       .from(albumTab)
       .where(eq(albumTab.albumId, albumId))
       .limit(1);
 
-    if (!album) {
+    if (!album || album.kind !== AlbumKindEnum.SHARED) {
       return null;
     }
 

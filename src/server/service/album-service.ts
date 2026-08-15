@@ -15,10 +15,8 @@ import { FileTypeEnum } from '@/server/enums/file-enum';
 import { type File } from '@/server/entity/file';
 import { albumPermissionService } from '@/server/service/album-permission-service';
 import { auditLogService } from '@/server/service/audit-log-service';
-import { albumMemberTab } from '@/server/entity/album-member';
 import { userTab } from '@/server/entity/user';
 import { AlbumKindEnum } from '@/server/enums/album-enum';
-import { UserTypeEnum } from '@/server/enums/user-enum';
 
 // 这个模块处理相册数据写入相关业务。
 
@@ -36,7 +34,10 @@ const albumService = {
     const albumList = await orm
       .select()
       .from(albumTab)
-      .where(inArray(albumTab.albumId, visibleAlbumIds))
+      .where(and(
+        inArray(albumTab.albumId, visibleAlbumIds),
+        eq(albumTab.kind, AlbumKindEnum.SHARED),
+      ))
       .orderBy(desc(albumTab.sort));
 
     if (!albumList.length) {
@@ -98,59 +99,6 @@ const albumService = {
     });
 
     return list;
-  },
-
-  // 确保指定账号拥有一个受保护的个人上传相册，并修复其固定权限。
-  async ensurePersonalAlbum(userId: string): Promise<Album> {
-    const [user] = await orm
-      .select({ userId: userTab.userId, type: userTab.type })
-      .from(userTab)
-      .where(eq(userTab.userId, userId))
-      .limit(1);
-
-    if (!user) {
-      throw new BizError('user.notFound');
-    }
-
-    const [existingAlbum] = await orm
-      .select()
-      .from(albumTab)
-      .where(and(
-        eq(albumTab.userId, userId),
-        eq(albumTab.kind, AlbumKindEnum.PERSONAL),
-      ))
-      .limit(1);
-    const now = new Date().toISOString();
-    const album = existingAlbum ?? (await orm.insert(albumTab).values({
-      albumId: createId(),
-      name: '我上传的照片',
-      userId,
-      kind: AlbumKindEnum.PERSONAL,
-      sort: 0,
-      createTime: now,
-      updateTime: now,
-    }).returning())[0];
-
-    await orm.insert(albumMemberTab).values({
-      id: createId(),
-      albumId: album.albumId,
-      userId,
-      canView: 1,
-      canUpload: user.type === UserTypeEnum.DEMO ? 0 : 1,
-      canDeleteOwn: 0,
-      createTime: now,
-      updateTime: now,
-    }).onConflictDoUpdate({
-      target: [albumMemberTab.albumId, albumMemberTab.userId],
-      set: {
-        canView: 1,
-        canUpload: user.type === UserTypeEnum.DEMO ? 0 : 1,
-        canDeleteOwn: 0,
-        updateTime: now,
-      },
-    });
-
-    return album;
   },
 
   // 添加当前用户的相册，并阻止同一用户创建重复名称的相册。
