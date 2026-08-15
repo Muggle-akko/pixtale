@@ -31,7 +31,7 @@ import { fileChecksum } from '@/server/lib/crypto';
 import { processPhotoImages } from '@/server/lib/photo-process';
 import { readPhotoExifFromBuffer as readExifWithExifr } from '@/server/lib/photo-exifr';
 import { readPhotoExifFromBuffer as readExifWithExiftool } from '@/server/lib/photo-exif';
-import { type Exif } from '@/server/entity/exif';
+import { type Exif, exifTab } from '@/server/entity/exif';
 import { exifService } from '@/server/service/exif-service';
 import { buildPhotoKey, buildPreviewKey, buildThumbnailKey } from '@/server/lib/photo-path';
 import { type File as PhotoFile, fileTab } from '@/server/entity/file';
@@ -395,115 +395,146 @@ const photoService = {
       throw new BizError('storage.notFound');
     }
 
-    const { buffer, name, size, type } = await this.readPhotoUpload(file, uploadedKey, storageId);
-    const checksum = await fileChecksum(new Blob([buffer]));
+    let photoId: string | null = null;
+    let cleanupKeys = uploadedKey ? [uploadedKey] : [];
 
-    if ((await this.exists({ checksum, name }, userId)).duplicate) {
-      return { photo: null, duplicate: true };
+    try {
+      const { buffer, name, size, type } = await this.readPhotoUpload(file, uploadedKey, storageId);
+      const checksum = await fileChecksum(new Blob([buffer]));
+
+      if ((await this.exists({ checksum, name }, userId)).duplicate) {
+        if (uploadedKey) {
+          await storage.delete(uploadedKey, storageId);
+        }
+        return { photo: null, duplicate: true };
+      }
+
+      const images = await processPhotoImages(buffer);
+      const meta = process.env.VERCEL
+        ? await readExifWithExifr(buffer)
+        : await readExifWithExiftool(buffer);
+      const takenTime = meta.takenTime ?? new Date(lastModified > 0 ? lastModified : Date.now()).toISOString();
+      const key = uploadedKey || await this.resolvePhotoKey(userId, name);
+      photoId = createId();
+      const preview = buildPreviewKey(userId, photoId);
+      const thumbnail = buildThumbnailKey(userId, photoId);
+      cleanupKeys = [key, preview, thumbnail];
+
+      const cacheMetadata = [['Cache-Control', 'private, max-age=604800']];
+      const keyMetadata = [
+        ...cacheMetadata,
+        ['Content-Disposition', buildContentDisposition(name)]
+      ];
+
+      // 已直传原图时不再重复 put 原图，只写入衍生图。
+      const uploadFiles = uploadedKey
+        ? []
+        : [{
+            key,
+            body: buffer,
+            type,
+            metadata: keyMetadata,
+          }];
+
+      await storage.put([
+        ...uploadFiles,
+        {
+          key: preview,
+          body: images.previewBuffer,
+          type: 'image/jpeg',
+          metadata: cacheMetadata,
+        },
+        {
+          key: thumbnail,
+          body: images.thumbnailBuffer,
+          type: 'image/webp',
+          metadata: cacheMetadata,
+        },
+      ], storageId);
+
+      const now = new Date().toISOString();
+
+      const [photo] = await orm.insert(photoTab).values({
+        photoId,
+        name,
+        thumbHash: images.thumbHash,
+        checksum,
+        type,
+        typeDesc: type.split('/').pop() || type,
+        size,
+        width: images.width,
+        height: images.height,
+        takenTime,
+        createTime: now,
+        userId,
+        status: PhotoStatusEnum.NORMAL,
+        favorite: PhotoFavoriteEnum.NO,
+        storageId
+      }).returning();
+
+      const files = await fileService.save([
+        { fileId: createId(), photoId, key, type: FileTypeEnum.ORIGINAL, fileType: type, size },
+        { fileId: createId(), photoId, key: preview, type: FileTypeEnum.PREVIEW, fileType: 'image/jpeg', size: images.previewBuffer.length },
+        { fileId: createId(), photoId, key: thumbnail, type: FileTypeEnum.THUMBNAIL, fileType: 'image/webp', size: images.thumbnailBuffer.length },
+      ]);
+
+      await exifService.save(photoId, {
+        exif: meta.exif,
+        latitude: meta.latitude,
+        longitude: meta.longitude,
+        altitude: meta.altitude,
+      });
+
+      await albumService.addPhoto({
+        albumIds: [albumId],
+        photoIds: [photo.photoId]
+      }, userId);
+
+      const domain = formatHttpUrl(fileStorage.domain);
+
+      return {
+        photo: this.toPhotoVo(
+          photo,
+          files,
+          fileStorage,
+          domain,
+          {
+            photoId,
+            exif: meta.exif,
+            latitude: meta.latitude,
+            longitude: meta.longitude,
+            altitude: meta.altitude,
+          },
+          {
+            uploaderName: null,
+            canDelete: uploadPermission.isAdmin || uploadPermission.canDeleteOwn,
+          },
+        ),
+        duplicate: false,
+      };
+    } catch (error) {
+      // 存储或写库任一步失败，都尽力清理本次请求创建的对象和半成品记录。
+      if (photoId) {
+        try {
+          await orm.delete(albumPhotoTab).where(eq(albumPhotoTab.photoId, photoId));
+          await orm.delete(exifTab).where(eq(exifTab.photoId, photoId));
+          await fileService.deleteByPhotoIds([photoId]);
+          await orm.delete(photoTab).where(eq(photoTab.photoId, photoId));
+        } catch (cleanupError) {
+          console.error('Failed to clean partial photo records', cleanupError);
+        }
+      }
+
+      if (cleanupKeys.length) {
+        try {
+          await storage.delete(cleanupKeys, storageId);
+        } catch (cleanupError) {
+          console.error('Failed to compensate uploaded photo objects', cleanupError);
+        }
+      }
+
+      throw error;
     }
-
-    const images = await processPhotoImages(buffer);
-    const meta = process.env.VERCEL
-      ? await readExifWithExifr(buffer)
-      : await readExifWithExiftool(buffer);
-    const takenTime = meta.takenTime ?? new Date(lastModified > 0 ? lastModified : Date.now()).toISOString();
-    const key = uploadedKey || await this.resolvePhotoKey(userId, name);
-    const photoId = createId();
-    const preview = buildPreviewKey(userId, photoId);
-    const thumbnail = buildThumbnailKey(userId, photoId);
-
-    const cacheMetadata = [['Cache-Control', 'private, max-age=604800']];
-    const keyMetadata = [
-      ...cacheMetadata,
-      ['Content-Disposition', buildContentDisposition(name)]
-    ];
-
-    // 已直传原图时不再重复 put 原图，只写入衍生图。
-    const uploadFiles = uploadedKey
-      ? []
-      : [{
-          key,
-          body: buffer,
-          type,
-          metadata: keyMetadata,
-        }];
-
-    await storage.put([
-      ...uploadFiles,
-      {
-        key: preview,
-        body: images.previewBuffer,
-        type: 'image/jpeg',
-        metadata: cacheMetadata,
-      },
-      {
-        key: thumbnail,
-        body: images.thumbnailBuffer,
-        type: 'image/webp',
-        metadata: cacheMetadata,
-      },
-    ], storageId);
-
-    const now = new Date().toISOString();
-
-    const [photo] = await orm.insert(photoTab).values({
-      photoId,
-      name,
-      thumbHash: images.thumbHash,
-      checksum,
-      type,
-      typeDesc: type.split('/').pop() || type,
-      size,
-      width: images.width,
-      height: images.height,
-      takenTime,
-      createTime: now,
-      userId,
-      status: PhotoStatusEnum.NORMAL,
-      favorite: PhotoFavoriteEnum.NO,
-      storageId
-    }).returning();
-
-    const files = await fileService.save([
-      { fileId: createId(), photoId, key, type: FileTypeEnum.ORIGINAL, fileType: type, size },
-      { fileId: createId(), photoId, key: preview, type: FileTypeEnum.PREVIEW, fileType: 'image/jpeg', size: images.previewBuffer.length },
-      { fileId: createId(), photoId, key: thumbnail, type: FileTypeEnum.THUMBNAIL, fileType: 'image/webp', size: images.thumbnailBuffer.length },
-    ]);
-
-    await exifService.save(photoId, {
-      exif: meta.exif,
-      latitude: meta.latitude,
-      longitude: meta.longitude,
-      altitude: meta.altitude,
-    });
-
-    await albumService.addPhoto({
-      albumIds: [albumId],
-      photoIds: [photo.photoId]
-    }, userId);
-
-    const domain = formatHttpUrl(fileStorage.domain);
-
-    return {
-      photo: this.toPhotoVo(
-        photo,
-        files,
-        fileStorage,
-        domain,
-        {
-          photoId,
-          exif: meta.exif,
-          latitude: meta.latitude,
-          longitude: meta.longitude,
-          altitude: meta.altitude,
-        },
-        {
-          uploaderName: null,
-          canDelete: uploadPermission.isAdmin || uploadPermission.canDeleteOwn,
-        },
-      ),
-      duplicate: false,
-    };
   },
 
   // 把当前用户的指定照片移动到回收站，并记录回收时间。

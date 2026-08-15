@@ -9,6 +9,7 @@
     "postbuild": "node ./scripts/on-post-build.js",
     "start": "next start",
     "lint": "eslint",
+    "test:shared": "node scripts/verify-shared-album.js",
     "bundle:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bundle-win.ps1"
   },
   "dependencies": {

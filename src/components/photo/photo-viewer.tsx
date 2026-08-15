@@ -13,6 +13,7 @@ import { PhotoCommentComposer, PhotoCommentMarkers, type CommentPosition } from 
 import { useTapAction } from "@/hooks/use-tap-action"
 import { Button } from "@/components/ui/button"
 import { getThumbHashUrl } from "@/lib/thumb-hash"
+import { screenPointToPhotoRatio } from "@/lib/photo-comment-position"
 import { photoCommentAdd, photoCommentDelete, photoCommentList, photoCommentUpdate } from "@/request/photo-comment"
 import { type PhotoVo } from "@/server/entity/vo/photo"
 import { type PhotoCommentVo } from "@/server/entity/vo/photo-comment"
@@ -520,21 +521,7 @@ function PhotoSlideImage({
     const rect = event.currentTarget.getBoundingClientRect()
     const screenX = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
     const screenY = Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height))
-    let xRatio = screenX
-    let yRatio = screenY
-
-    if (normalizedRotate === 90) {
-      xRatio = screenY
-      yRatio = 1 - screenX
-    } else if (normalizedRotate === 180) {
-      xRatio = 1 - screenX
-      yRatio = 1 - screenY
-    } else if (normalizedRotate === 270) {
-      xRatio = 1 - screenY
-      yRatio = screenX
-    }
-
-    onCreatePosition({ xRatio, yRatio })
+    onCreatePosition(screenPointToPhotoRatio(screenX, screenY, normalizedRotate))
   }
 
   return (
