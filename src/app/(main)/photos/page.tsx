@@ -181,7 +181,7 @@ export default function Page() {
                 </BreadcrumbList>
               </Breadcrumb>
             </div>
-            <div className="fixed left-[calc(100vw-5.75rem)]  md:left-[calc(100vw-6.25rem)] top-0 flex h-12 items-center gap-1 px-4">
+            <div className="fixed top-0 right-0 flex h-12 items-center gap-1 px-4">
               <PhotoDateDrawer onRangeChange={changePhotoTime} />
               {hasUploadAlbum && (
                 <Button

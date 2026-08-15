@@ -27,7 +27,7 @@ import { photoFavorite, photoRecycle } from "@/request/photo"
 import { albumAddPhoto, albumRemovePhoto } from "@/request/album"
 import { useAlbumStore } from "@/store/album-store"
 import { usePhotoStore } from "@/store/photo-store"
-import { ArrowLeftIcon, PlusIcon } from "lucide-react"
+import { ArrowLeftIcon, ListChecks, PlusIcon } from "lucide-react"
 import { useAlbumPhotoContext } from "./provider"
 import { useApp } from "@/app/(main)/provider"
 import { PhotoDateDrawer } from "@/components/photo/photo-date-drawer"
@@ -67,6 +67,10 @@ export default function Page() {
   } = usePhotoList({ albumId }, PHOTO_LIST_PAGE_SIZE, initialPhotos)
   const [modelPhotoIndex, setModelPhotoIndex] = useState(0)
   const [showPhotoViewer, setShowPhotoViewer] = useState(false)
+  // selectAllSignal 控制瀑布流选中当前已加载的全部可操作照片。
+  const [selectAllSignal, setSelectAllSignal] = useState(0)
+  // selectedPhotoCount 保存当前相册已选照片数量。
+  const [selectedPhotoCount, setSelectedPhotoCount] = useState(0)
   // albumDialogOpen 控制加入相册弹框的打开状态。
   const [albumDialogOpen, setAlbumDialogOpen] = useState(false)
   // albumPhotoIds 保存本次要加入其他相册的照片 id。
@@ -215,7 +219,7 @@ export default function Page() {
                 </BreadcrumbList>
               </Breadcrumb>
             </div>
-            <div className="fixed left-[calc(100vw-5.75rem)] md:left-[calc(100vw-6.25rem)] top-0 flex h-12 items-center gap-1 px-4">
+            <div className="fixed top-0 right-0 flex h-12 items-center gap-1 px-4">
               <PhotoDateDrawer albumId={albumId} onRangeChange={changePhotoTime} />
               {currentAlbum?.canUpload && (
                 <Button
@@ -226,6 +230,17 @@ export default function Page() {
                   aria-label={t("uploadPhotos")}
                 >
                   <PlusIcon />
+                </Button>
+              )}
+              {(isAdmin || currentAlbum?.canDeleteOwn) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="gap-1.5 px-2 text-xs"
+                  onClick={() => setSelectAllSignal((value) => value + 1)}
+                >
+                  <ListChecks className="size-4" />
+                  <span>{selectedPhotoCount ? t("selectedPhotos", { count: selectedPhotoCount }) : t("selectPhotos")}</span>
                 </Button>
               )}
             </div>
@@ -241,6 +256,8 @@ export default function Page() {
                 onPhotoDelete={isAdmin || currentAlbum?.canDeleteOwn ? deletePhotos : undefined}
                 onAlbumOpen={isAdmin ? openAlbumDialog : undefined}
                 onAlbumRemove={isAdmin && currentAlbum?.kind !== AlbumKindEnum.PERSONAL ? removeAlbumPhotos : undefined}
+                selectAllSignal={selectAllSignal}
+                onSelectionChange={setSelectedPhotoCount}
               />
             ) : (
               <PhotoMasonrySkeleton photos={initialPhotos} />

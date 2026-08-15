@@ -65,6 +65,8 @@
   "albums.namePlaceholder": "请输入相册名称",
   "albums.addPhotosTitle": "加入相册",
   "albums.uploadPhotos": "上传照片",
+  "albums.selectPhotos": "多选",
+  "albums.selectedPhotos": "已选 {count} 张",
   "albums.empty": "暂无相册",
   "albums.personal": "我上传的照片",
   "albums.deleteTitle": "确定删除相册？",

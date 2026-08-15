@@ -65,6 +65,8 @@
   "albums.namePlaceholder": "Enter an album name",
   "albums.addPhotosTitle": "Add to Albums",
   "albums.uploadPhotos": "Upload photos",
+  "albums.selectPhotos": "Select",
+  "albums.selectedPhotos": "{count} selected",
   "albums.empty": "No albums yet",
   "albums.personal": "My uploads",
   "albums.deleteTitle": "Delete This Album?",
