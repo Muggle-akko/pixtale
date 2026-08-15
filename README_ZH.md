@@ -1,9 +1,13 @@
-<p align="center">
+<div align="center">
     <img src="https://img.022335.xyz/logo.png" width="96px" />
     <h1 align="center">Pixtale</h1>
     <p align="center"><strong>一个沉浸式瀑布流相册应用🎉</strong></p>
     <p align="center"><a href="README.md">English</a> | <a href="README_ZH.md">简体中文</a></p>
-</p>
+    <img alt="Next.js" src="https://img.shields.io/badge/next.js-16-white?labelColor=black&logo=nextdotjs&logoColor=white&style=flat-square">
+    <img alt="Docker" src="https://img.shields.io/badge/docker-ready-2496ED?labelColor=black&logo=docker&logoColor=white&style=flat-square">
+    <img alt="Vercel" src="https://img.shields.io/badge/vercel-online-55b467?labelColor=black&logo=vercel&style=flat-square">
+    <img alt="AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue?labelColor=black&style=flat-square">
+</div>
 
 
 ## 前言
