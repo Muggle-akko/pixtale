@@ -11,6 +11,12 @@ interface ApiResponse<T = unknown> {
 type RequestParams = object | FormData | null;
 
 const MOCK_REQUEST_DELAY = 0;
+const LOADING_TOAST_ID = 'http-request-loading';
+const LOADING_TOAST_DELAY = 300;
+const pendingRequestIds = new Set<number>();
+let loadingToastTimer: ReturnType<typeof setTimeout> | null = null;
+let loadingToastVisible = false;
+let requestSequence = 0;
 
 // 等待指定毫秒数，用于模拟线上接口耗时。
 function sleep(ms: number) {
@@ -22,6 +28,49 @@ function sleep(ms: number) {
 // 拼接接口基础地址。
 function buildUrl(url: string) {
   return url.startsWith('/api') ? url : `/api${url.startsWith('/') ? url : `/${url}`}`;
+}
+
+// 按当前页面语言返回统一的请求加载提示。
+function getLoadingMessage() {
+  return document.documentElement.lang.startsWith('zh') ? '加载中…' : 'Loading…';
+}
+
+// 注册一个请求，并在请求超过短暂阈值时显示合并后的全局加载提示。
+function beginRequestLoading() {
+  const requestId = ++requestSequence;
+  pendingRequestIds.add(requestId);
+
+  if (!loadingToastTimer && !loadingToastVisible) {
+    loadingToastTimer = setTimeout(() => {
+      loadingToastTimer = null;
+
+      if (pendingRequestIds.size) {
+        toast.loading(getLoadingMessage(), { id: LOADING_TOAST_ID });
+        loadingToastVisible = true;
+      }
+    }, LOADING_TOAST_DELAY);
+  }
+
+  return requestId;
+}
+
+// 完成一个请求；最后一个请求结束后关闭统一的全局加载提示。
+function endRequestLoading(requestId: number) {
+  pendingRequestIds.delete(requestId);
+
+  if (pendingRequestIds.size) {
+    return;
+  }
+
+  if (loadingToastTimer) {
+    clearTimeout(loadingToastTimer);
+    loadingToastTimer = null;
+  }
+
+  if (loadingToastVisible) {
+    toast.dismiss(LOADING_TOAST_ID);
+    loadingToastVisible = false;
+  }
 }
 
 // 处理身份失效并跳转登录页。
@@ -43,28 +92,34 @@ async function post<T = unknown>(url: string, params: RequestParams = null) {
     body = JSON.stringify(params);
   }
 
-  await sleep(MOCK_REQUEST_DELAY);
+  const requestId = beginRequestLoading();
 
-  const res = await fetch(buildUrl(url), {
-    method: 'POST',
-    headers,
-    body,
-    credentials: 'include'
-  });
-  const json = await res.json() as ApiResponse<T>;
+  try {
+    await sleep(MOCK_REQUEST_DELAY);
 
-  if (!res.ok || json.code !== 200) {
-    const message = json.message || '请求失败';
-    toast.error(message);
+    const res = await fetch(buildUrl(url), {
+      method: 'POST',
+      headers,
+      body,
+      credentials: 'include'
+    });
+    const json = await res.json() as ApiResponse<T>;
 
-    if (res.status === 401 || json.code === 401) {
-      handleUnauthorized();
+    if (!res.ok || json.code !== 200) {
+      const message = json.message || '请求失败';
+      toast.error(message);
+
+      if (res.status === 401 || json.code === 401) {
+        handleUnauthorized();
+      }
+
+      throw new Error(message);
     }
 
-    throw new Error(message);
+    return json.data as T;
+  } finally {
+    endRequestLoading(requestId);
   }
-
-  return json.data as T;
 }
 
 const http = {
