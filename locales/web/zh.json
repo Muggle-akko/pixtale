@@ -229,6 +229,7 @@
   "layout.userMenu.changeAvatar": "更换头像",
   "layout.userMenu.changePassword": "修改密码",
   "layout.userMenu.documentation": "文档",
+  "layout.userMenu.sourceCode": "源代码",
   "layout.userMenu.signOut": "退出登录",
   "layout.theme.label": "主题",
   "layout.avatar.title": "更换头像",

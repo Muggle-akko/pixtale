@@ -10,5 +10,8 @@ Modifications beginning on 2026-08-15:
 - per-member, per-album permissions;
 - per-user favorites;
 - spatial photo comments.
+- admin audit records and batch album permissions;
+- upload compensation cleanup for object storage and partial database writes;
+- Vercel, Turso, and private Cloudflare R2 deployment guidance.
 
 The modified project remains licensed under GNU AGPL-3.0-only. It is not endorsed by the original author.

@@ -25,7 +25,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { ThemeSwitcher } from "@/components/layout/theme-switcher"
-import { ChevronsUpDownIcon, UserRound, Key, BookOpen, LogOutIcon } from "lucide-react"
+import { ChevronsUpDownIcon, UserRound, Key, CodeXml, LogOutIcon } from "lucide-react"
 import { logout } from "@/request/login"
 import { useApp } from "@/app/(main)/provider"
 import { useTranslations } from "next-intl"
@@ -69,6 +69,7 @@ export function NavUser({
   const [avatarOpen, setAvatarOpen] = useState(false)
   // passwordOpen 控制修改密码弹框打开状态。
   const [passwordOpen, setPasswordOpen] = useState(false)
+  const sourceCodeUrl = process.env.NEXT_PUBLIC_SOURCE_CODE_URL || "https://github.com/aslost/pixtale"
 
   useEffect(() => {
     return () => {
@@ -174,9 +175,11 @@ export function NavUser({
                   <Key />
                   {t("changePassword")}
                 </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <BookOpen />
-                  {t("documentation")}
+                <DropdownMenuItem asChild>
+                  <a href={sourceCodeUrl} target="_blank" rel="noreferrer">
+                    <CodeXml />
+                    {t("sourceCode")}
+                  </a>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />

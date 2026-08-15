@@ -229,6 +229,7 @@
   "layout.userMenu.changeAvatar": "Change profile picture",
   "layout.userMenu.changePassword": "Change password",
   "layout.userMenu.documentation": "Documentation",
+  "layout.userMenu.sourceCode": "Source code",
   "layout.userMenu.signOut": "Sign out",
   "layout.theme.label": "Theme",
   "layout.avatar.title": "Change Profile Picture",

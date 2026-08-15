@@ -12,31 +12,32 @@
 > [!NOTE]
 > This repository is an unofficial modified version of [aslost/pixtale](https://github.com/aslost/pixtale). See [MODIFICATIONS.md](MODIFICATIONS.md) for the change history. It remains licensed under AGPL-3.0-only.
 
-## Introduction
+## Purpose
 
-Pixtale is an immersive masonry photo gallery built with Next.js for storing personal photos privately. It supports local storage and S3-compatible object storage, and can be deployed with Docker or on Vercel.
+This modified edition turns Pixtale into a login-only shared photo space. Administrators create member accounts and grant access per member and per album. Albums without view permission are completely hidden.
 
-## Preview
+The recommended production stack is Vercel, Turso, and a private Cloudflare R2 bucket. Media is served through application authorization, so the bucket does not need public access.
 
-- [Live Demo](https://022335.xyz)
-- [Deployment Guide](https://doc.022335.xyz)
+## Shared Album Features
 
-![](https://img.022335.xyz/demo.jpg)
-![](https://img.022335.xyz/demo1.jpg)
+- Per-album view, upload, and delete-own permissions, with member search and batch controls.
+- Permission-filtered albums, photo timeline, EXIF, and private per-user favorites.
+- Uploads bound to an authorized target album, with object-storage compensation cleanup on failure.
+- Member deletion removes only their own photo from the current album; admins control global trash and permanent deletion.
+- Spatial photo comments that follow zoom and rotation, with a persistent hide/show preference.
+- Admin activity log for permission changes and deletion events.
 
-## Features
+## Deployment
 
-- **🖼️ Masonry Gallery:** Infinite scroll with cursor pagination and virtualized rendering.
+See the [Chinese Vercel + Turso + Cloudflare R2 guide](docs/DEPLOYMENT_ZH.md). Required environment variables are documented in [.env.example](.env.example).
 
-- **🌄 Optimized Thumbnails:** Generates thumbnails and high-res previews for slower networks.
+Use Node.js 20.9 or newer; Node 22 is recommended:
 
-- **📷 EXIF Metadata:** Parses photo EXIF data and sorts photos chronologically.
-
-- **💻 Responsive Design:** Adapts automatically to desktop and most mobile browsers.
-
-- **☁️ Flexible Storage:** Store photos locally or on S3-compatible object storage and browse them in one place.
-
-- **👥 Multi-user Support:** Create and manage multiple user accounts.
+```bash
+npm ci
+npm run test:shared
+npm run build
+```
 
 ## Tech Stack
 
@@ -46,14 +47,12 @@ Pixtale is an immersive masonry photo gallery built with Next.js for storing per
 
 - **ORM:** [Drizzle](https://orm.drizzle.team/)
 
-- **Database:** [SQLite](https://sqlite.org/)
+- **Database:** [SQLite](https://sqlite.org/) / [Turso](https://turso.tech/)
+
+- **Object Storage:** S3-compatible storage (Cloudflare R2 recommended)
 
 - **UI Components:** [shadcn/ui](https://ui.shadcn.com/)
 
-## Friend Links 
-
-[LINUXDO](https://linux.do)
-
 ## License
 
-`Pixtale` is open-source software licensed under the [AGPL-3.0](LICENSE).
+`Pixtale` is open-source software licensed under the [AGPL-3.0](LICENSE). Network deployments must offer users the complete corresponding source for the deployed version. This edition exposes that link in the account menu.

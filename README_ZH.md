@@ -13,32 +13,50 @@
 > 本仓库是 [aslost/pixtale](https://github.com/aslost/pixtale) 的非官方修改版本。修改记录见 [MODIFICATIONS.md](MODIFICATIONS.md)，项目继续使用 AGPL-3.0-only 许可证。
 
 
-## 前言
+## 项目定位
 
-Pixtale 是一个基于Next.js构建的沉浸式瀑布流相册，主要用于个人私有存储照片，支持本地和S3等方式聚合存储，可部署到Docker和Vercel
+这个修改版把 Pixtale 改造成一个必须登录的共享相册。管理员创建成员账号并按“成员 + 相册”授权；没有查看权限的相册会完全隐藏。
 
-## 项目展示
+推荐部署组合：Vercel + Turso + 私有 Cloudflare R2。照片通过应用鉴权读取，R2 桶不需要开放公共访问。
 
-- [在线演示](https://022335.xyz)
-- [部署教程](https://doc.022335.xyz/zh/)
+## 共享相册功能
 
-![](https://img.022335.xyz/demo.jpg)
-![](https://img.022335.xyz/demo1.jpg)
+- **相册级权限**：管理员可分别授予查看、上传、删除本人上传照片；支持搜索成员和批量设置。
+- **共享照片视图**：普通成员只看到已授权相册，照片总览和收藏会自动过滤失效权限。
+- **安全上传与删除**：上传绑定目标相册；普通成员只能从当前相册移除自己上传的照片；只有管理员能永久删除。
+- **个人收藏**：每个账号拥有独立收藏状态。
+- **空间评论**：评论标签固定在照片位置，可随缩放和旋转移动，也可一键隐藏。
+- **管理员审计**：记录权限变更、成员/相册/照片/评论删除等关键操作。
+- **图片处理**：保留瀑布流、缩略图、高清预览、EXIF 和响应式布局。
 
+## 部署
 
-## 功能介绍
+完整步骤见 [Vercel + Turso + Cloudflare R2 部署指南](docs/DEPLOYMENT_ZH.md)。
 
-- **🖼️ 瀑布流列表**：瀑布流无限滚动，采用游标分页+虚拟滚动优化性能
+最低必需环境变量：
 
-- **🌄 缩略图优化**：生成缩略图和高清图，优化在弱网环境下的体验
+```dotenv
+TITLE=Pixtale Shared Album
+JWT_SECRET=长随机字符串
+ADMIN=管理员用户名
+PASSWORD=管理员强密码
+CRON_SECRET=另一个长随机字符串
+TURSO_DATABASE_URL=libsql://...
+TURSO_AUTH_TOKEN=...
+NEXT_PUBLIC_SOURCE_CODE_URL=https://github.com/你的账号/pixtale
+```
 
-- **📷 EXIF解析**：解析记录照片EXIF信息，按时间线排列照片
+部署完成后，在“系统 → 存储”中新建 S3 存储并填写 Cloudflare R2 的 bucket、endpoint、Access Key ID 和 Secret Access Key。
 
-- **💻 响应式设计**：响应式布局自动适配PC和大部分手机端浏览器
+## 本地验证
 
-- **☁️ 聚合存储**：支持本地文件和S3协议对象存储，聚合式存储图片
+项目要求 Node.js 20.9 或更高版本，推荐 Node 22。
 
-- **👥 多用户**：支持添加不同用户，提供多用户使用支持与管理
+```bash
+npm ci
+npm run test:shared
+npm run build
+```
 
 
 ## 技术栈
@@ -49,16 +67,14 @@ Pixtale 是一个基于Next.js构建的沉浸式瀑布流相册，主要用于�
 
 - **ORM：** [Drizzle](https://orm.drizzle.team/)
 
-- **数据库：** [SQLite](https://sqlite.org/)
+- **数据库：** [SQLite](https://sqlite.org/) / [Turso](https://turso.tech/)
+
+- **对象存储：** S3 兼容存储（推荐 Cloudflare R2）
 
 - **UI组件：** [shadcn/ui](https://ui.shadcn.com/)
 
-## 友情社区
-[LINUXDO](https://linux.do)
-
 ## 许可证
 
-`Pixtale` 是基于 [AGPL-3.0](LICENSE) 许可证的开源软件
-
+`Pixtale` 是基于 [AGPL-3.0](LICENSE) 许可证的开源软件。网络部署时必须向使用者提供当前部署版本对应的完整源代码；本修改版在账号菜单中提供“源代码”入口。
 
 
