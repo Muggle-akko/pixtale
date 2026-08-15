@@ -14,6 +14,10 @@ import { UserTypeEnum } from '@/server/enums/user-enum';
 const SYSTEM_PATHS = [
   '/setting',
   '/album/member',
+  '/album/add',
+  '/album/setName',
+  '/album/setTop',
+  '/album/delete',
   '/user/list',
   '/user/add',
   '/user/set',

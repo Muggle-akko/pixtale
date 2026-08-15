@@ -13,18 +13,25 @@ import { formatHttpUrl, toMediaUrl } from '@/lib/url';
 import { fileService } from '@/server/service/file-service';
 import { FileTypeEnum } from '@/server/enums/file-enum';
 import { type File } from '@/server/entity/file';
+import { albumPermissionService } from '@/server/service/album-permission-service';
 
 // 这个模块处理相册数据写入相关业务。
 
 const albumService = {
 
-  // 查询当前用户的全部相册列表。
+  // 查询当前用户有查看权限的全部相册列表。
   async list(userId: string): Promise<AlbumVo[]> {
+
+    const visibleAlbumIds = await albumPermissionService.listVisibleAlbumIds(userId);
+
+    if (!visibleAlbumIds.length) {
+      return [];
+    }
 
     const albumList = await orm
       .select()
       .from(albumTab)
-      .where(eq(albumTab.userId, userId))
+      .where(inArray(albumTab.albumId, visibleAlbumIds))
       .orderBy(desc(albumTab.sort));
 
     if (!albumList.length) {
@@ -46,7 +53,7 @@ const albumService = {
       .innerJoin(photoTab, eq(albumPhotoTab.photoId, photoTab.photoId))
       .where(and(
         eq(photoTab.status, PhotoStatusEnum.NORMAL),
-        eq(photoTab.userId, userId)
+        inArray(albumPhotoTab.albumId, visibleAlbumIds)
       ))
       .groupBy(albumPhotoTab.albumId)
       .orderBy(desc(photoTab.takenTime), desc(photoTab.photoId));
@@ -55,8 +62,10 @@ const albumService = {
       photoStatList.map((stat) => stat.photoId).filter(Boolean)
     );
 
+    const permissionMap = await albumPermissionService.listPermissions(userId, visibleAlbumIds);
     const list = albumList.map((album) => {
       const photoStat = photoStatList.find((stat) => stat.albumId === album.albumId);
+      const permission = permissionMap.get(album.albumId);
       const fileStorage = fileStorageList.list.find((item) => item.storageId === photoStat?.storageId);
       const domain = formatHttpUrl(fileStorage?.domain);
 
@@ -71,7 +80,9 @@ const albumService = {
         ...album,
         thumbnail: thumbnail ? toMediaUrl(thumbnail, domain, fileStorage?.type) : null,
         thumbHash: photoStat?.thumbHash ?? null,
-        photoTotal: Number(photoStat?.photoTotal ?? 0)
+        photoTotal: Number(photoStat?.photoTotal ?? 0),
+        canUpload: permission?.canUpload ?? false,
+        canDeleteOwn: permission?.canDeleteOwn ?? false,
       };
     });
 
@@ -80,6 +91,8 @@ const albumService = {
 
   // 添加当前用户的相册，并阻止同一用户创建重复名称的相册。
   async add(params: AlbumAddBo, userId: string): Promise<Album> {
+
+    await albumPermissionService.assertAdmin(userId);
 
     const name = params.name?.trim();
 
@@ -125,15 +138,21 @@ const albumService = {
       throw new BizError('album.selectRequired');
     }
 
+    const albumIds = Array.from(new Set(params.albumIds));
+    await Promise.all(albumIds.map((albumId) => (
+      albumPermissionService.assertCanUploadToAlbum(userId, albumId)
+    )));
+
+    const isAdmin = await albumPermissionService.isAdmin(userId);
     const photos = await orm
-      .select({
-        photoId: photoTab.photoId
-      })
+      .select({ photoId: photoTab.photoId })
       .from(photoTab)
-      .where(and(
-        eq(photoTab.userId, userId),
-        inArray(photoTab.photoId, params.photoIds)
-      ));
+      .where(isAdmin
+        ? inArray(photoTab.photoId, params.photoIds)
+        : and(
+            eq(photoTab.userId, userId),
+            inArray(photoTab.photoId, params.photoIds),
+          ));
     const photoIds = Array.from(new Set(photos.map((photo) => photo.photoId)));
 
     if (!photoIds.length) {
@@ -147,11 +166,11 @@ const albumService = {
       })
       .from(albumPhotoTab)
       .where(and(
-        inArray(albumPhotoTab.albumId, params.albumIds),
+        inArray(albumPhotoTab.albumId, albumIds),
         inArray(albumPhotoTab.photoId, photoIds)
       ));
     const existsKeys = new Set(existsRows.map((row) => `${row.albumId}:${row.photoId}`));
-    const rows = params.albumIds.flatMap((albumId) => (
+    const rows = albumIds.flatMap((albumId) => (
       photoIds
         .filter((photoId) => !existsKeys.has(`${albumId}:${photoId}`))
         .map((photoId) => ({
@@ -177,20 +196,9 @@ const albumService = {
       throw new BizError('photo.selectRequired');
     }
 
-    const [album] = await orm
-      .select({
-        albumId: albumTab.albumId
-      })
-      .from(albumTab)
-      .where(and(
-        eq(albumTab.albumId, params.albumId),
-        eq(albumTab.userId, userId)
-      ))
-      .limit(1);
-
-    if (!album) {
-      return;
-    }
+    await Promise.all(params.photoIds.map((photoId) => (
+      albumPermissionService.assertCanRemoveOwnPhoto(userId, params.albumId, photoId)
+    )));
 
     await orm.delete(albumPhotoTab)
       .where(and(
@@ -201,6 +209,7 @@ const albumService = {
 
   // 修改当前用户指定相册的名称。
   async setName(params: AlbumSetNameBo, userId: string): Promise<void> {
+    await albumPermissionService.assertAdmin(userId);
     const name = params.name?.trim();
 
     if (!name) {
@@ -212,36 +221,30 @@ const albumService = {
         name,
         updateTime: new Date().toISOString()
       })
-      .where(and(
-        eq(albumTab.albumId, params.albumId),
-        eq(albumTab.userId, userId)
-      ));
+      .where(eq(albumTab.albumId, params.albumId));
   },
 
   // 把当前用户指定相册置顶。
   async setTop(params: AlbumSetTopBo, userId: string): Promise<void> {
+    await albumPermissionService.assertAdmin(userId);
     await orm.update(albumTab)
       .set({
         sort: Date.now(),
         updateTime: new Date().toISOString()
       })
-      .where(and(
-        eq(albumTab.albumId, params.albumId),
-        eq(albumTab.userId, userId)
-      ));
+      .where(eq(albumTab.albumId, params.albumId));
   },
 
   // 删除当前用户指定相册，并清理相册照片关联。
   async delete(params: AlbumDeleteBo, userId: string): Promise<void> {
 
+    await albumPermissionService.assertAdmin(userId);
+
     await orm.delete(albumPhotoTab)
       .where(eq(albumPhotoTab.albumId, params.albumId));
 
     await orm.delete(albumTab)
-      .where(and(
-        eq(albumTab.albumId, params.albumId),
-        eq(albumTab.userId, userId)
-      ));
+      .where(eq(albumTab.albumId, params.albumId));
 
   },
 
@@ -303,7 +306,9 @@ const albumService = {
       userId,
       thumbnail: thumbnail ? toMediaUrl(thumbnail, domain, fileStorage?.type) : null,
       thumbHash: coverPhoto?.thumbHash ?? null,
-      photoTotal: photoList.length
+      photoTotal: photoList.length,
+      canUpload: false,
+      canDeleteOwn: false,
     };
   }
 }

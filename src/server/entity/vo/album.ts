@@ -6,6 +6,8 @@ interface AlbumVo extends Album {
   thumbnail: string | null;
   thumbHash: string | null;
   photoTotal: number;
+  canUpload: boolean;
+  canDeleteOwn: boolean;
 }
 
 export type { AlbumVo };

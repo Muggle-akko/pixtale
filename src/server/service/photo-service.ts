@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNotNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, countDistinct, desc, eq, getTableColumns, gte, inArray, isNotNull, lt, lte, or, sql } from 'drizzle-orm';
 import { createId } from '@/server/lib/id';
 import { type Photo, photoTab } from '@/server/entity/photo';
 import { albumPhotoTab } from '@/server/entity/album-photo';
@@ -37,6 +37,7 @@ import { buildPhotoKey, buildPreviewKey, buildThumbnailKey } from '@/server/lib/
 import { type File as PhotoFile, fileTab } from '@/server/entity/file';
 import { fileService } from '@/server/service/file-service';
 import { FileTypeEnum } from '@/server/enums/file-enum';
+import { albumPermissionService } from '@/server/service/album-permission-service';
 
 // 这个模块处理照片上传、列表、回收站等业务。
 
@@ -51,10 +52,7 @@ const photoService = {
       ? photoTab.recycleTime
       : photoTab.takenTime;
 
-    const whereList = [
-      eq(photoTab.status, status),
-      eq(photoTab.userId, userId)
-    ];
+    const whereList = [eq(photoTab.status, status)];
 
     if (params.favorite) {
       whereList.push(eq(photoTab.favorite, params.favorite));
@@ -82,9 +80,12 @@ const photoService = {
       }
     }
 
-    const list = params.albumId
-      ? await orm
-        .select(getTableColumns(photoTab))
+    let list: Photo[];
+
+    if (params.albumId) {
+      await albumPermissionService.assertCanViewAlbum(userId, params.albumId);
+      list = await orm
+        .selectDistinct(getTableColumns(photoTab))
         .from(photoTab)
         .innerJoin(albumPhotoTab, eq(photoTab.photoId, albumPhotoTab.photoId))
         .where(and(
@@ -92,13 +93,32 @@ const photoService = {
           eq(albumPhotoTab.albumId, params.albumId)
         ))
         .orderBy(desc(orderColumn), desc(photoTab.photoId))
-        .limit(size)
-      : await orm
+        .limit(size);
+    } else if (await albumPermissionService.isAdmin(userId)) {
+      list = await orm
         .select()
         .from(photoTab)
         .where(and(...whereList))
         .orderBy(desc(orderColumn), desc(photoTab.photoId))
         .limit(size);
+    } else {
+      const visibleAlbumIds = await albumPermissionService.listVisibleAlbumIds(userId);
+
+      if (!visibleAlbumIds.length) {
+        return { list: [], total: 0 };
+      }
+
+      list = await orm
+        .selectDistinct(getTableColumns(photoTab))
+        .from(photoTab)
+        .innerJoin(albumPhotoTab, eq(photoTab.photoId, albumPhotoTab.photoId))
+        .where(and(
+          ...whereList,
+          inArray(albumPhotoTab.albumId, visibleAlbumIds)
+        ))
+        .orderBy(desc(orderColumn), desc(photoTab.photoId))
+        .limit(size);
+    }
 
     const fileStorageList = await storageService.getStorageList();
     const photoIds = list.map((photo) => photo.photoId);
@@ -125,7 +145,6 @@ const photoService = {
 
     const whereList = [
       eq(photoTab.status, PhotoStatusEnum.NORMAL),
-      eq(photoTab.userId, userId),
       isNotNull(photoTab.takenTime),
     ];
 
@@ -138,11 +157,14 @@ const photoService = {
     const takenDate = sql<string>`date(${photoTab.takenTime}, ${tzModifier})`;
     const selectColumns = {
       date: takenDate,
-      count: count(photoTab.photoId),
+      count: countDistinct(photoTab.photoId),
     };
 
-    const list = params.albumId
-      ? await orm
+    let list: { date: string; count: number }[];
+
+    if (params.albumId) {
+      await albumPermissionService.assertCanViewAlbum(userId, params.albumId);
+      list = await orm
         .select(selectColumns)
         .from(photoTab)
         .innerJoin(albumPhotoTab, eq(photoTab.photoId, albumPhotoTab.photoId))
@@ -151,13 +173,32 @@ const photoService = {
           eq(albumPhotoTab.albumId, params.albumId)
         ))
         .groupBy(takenDate)
-        .orderBy(asc(takenDate))
-      : await orm
+        .orderBy(asc(takenDate));
+    } else if (await albumPermissionService.isAdmin(userId)) {
+      list = await orm
         .select(selectColumns)
         .from(photoTab)
         .where(and(...whereList))
         .groupBy(takenDate)
         .orderBy(asc(takenDate));
+    } else {
+      const visibleAlbumIds = await albumPermissionService.listVisibleAlbumIds(userId);
+
+      if (!visibleAlbumIds.length) {
+        return [];
+      }
+
+      list = await orm
+        .select(selectColumns)
+        .from(photoTab)
+        .innerJoin(albumPhotoTab, eq(photoTab.photoId, albumPhotoTab.photoId))
+        .where(and(
+          ...whereList,
+          inArray(albumPhotoTab.albumId, visibleAlbumIds),
+        ))
+        .groupBy(takenDate)
+        .orderBy(asc(takenDate));
+    }
 
     return list.map((item) => ({
       date: item.date,
@@ -231,14 +272,31 @@ const photoService = {
       return { duplicate: false };
     }
 
-    const [duplicatePhoto] = await orm
-      .select({ photoId: photoTab.photoId })
-      .from(photoTab)
-      .where(and(
-        eq(photoTab.userId, userId),
-        eq(photoTab.checksum, checksum)
-      ))
-      .limit(1);
+    let duplicatePhoto: { photoId: string } | undefined;
+
+    if (await albumPermissionService.isAdmin(userId)) {
+      [duplicatePhoto] = await orm
+        .select({ photoId: photoTab.photoId })
+        .from(photoTab)
+        .where(eq(photoTab.checksum, checksum))
+        .limit(1);
+    } else {
+      const visibleAlbumIds = await albumPermissionService.listVisibleAlbumIds(userId);
+
+      if (!visibleAlbumIds.length) {
+        return { duplicate: false };
+      }
+
+      [duplicatePhoto] = await orm
+        .select({ photoId: photoTab.photoId })
+        .from(photoTab)
+        .innerJoin(albumPhotoTab, eq(photoTab.photoId, albumPhotoTab.photoId))
+        .where(and(
+          eq(photoTab.checksum, checksum),
+          inArray(albumPhotoTab.albumId, visibleAlbumIds),
+        ))
+        .limit(1);
+    }
 
     return { duplicate: Boolean(duplicatePhoto) };
   },

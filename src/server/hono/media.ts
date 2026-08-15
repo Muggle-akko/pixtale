@@ -4,7 +4,7 @@ import { storage } from '@/server/storage/storage';
 import { orm } from '@/server/infra/db';
 import { photoTab } from '@/server/entity/photo';
 import { fileTab } from '@/server/entity/file';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { contextStorage } from 'hono/context-storage';
 import { security } from '../security/security';
 import { getUserId } from '@/server/security/context';
@@ -14,6 +14,7 @@ import { FileTypeEnum } from '@/server/enums/file-enum';
 import BizError from '@/server/error/biz-error';
 import { i18nMiddleware, t } from '@/server/i18n';
 import type { HonoEnv } from './type';
+import { albumPermissionService } from '@/server/service/album-permission-service';
 
 // 这个模块处理照片媒体读取接口，路径为 /media/{key}。
 
@@ -50,8 +51,12 @@ async function getPhotoFile(key: string) {
     })
     .from(fileTab)
     .innerJoin(photoTab, eq(fileTab.photoId, photoTab.photoId))
-    .where(and(eq(fileTab.key, key), eq(photoTab.userId, userId)))
+    .where(eq(fileTab.key, key))
     .limit(1);
+
+  if (!row || !await albumPermissionService.canViewPhoto(userId, row.photoId)) {
+    return null;
+  }
 
   return row;
 }

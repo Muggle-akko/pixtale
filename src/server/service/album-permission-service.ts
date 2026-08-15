@@ -26,6 +26,13 @@ const albumPermissionService = {
     return user?.type === UserTypeEnum.ADMIN;
   },
 
+  // 校验指定用户是否为全局管理员。
+  async assertAdmin(userId: string): Promise<void> {
+    if (!await this.isAdmin(userId)) {
+      throw new BizError('auth.forbidden', 403);
+    }
+  },
+
   // 列出当前用户可见的全部相册 id，管理员默认拥有全部相册权限。
   async listVisibleAlbumIds(userId: string): Promise<string[]> {
     if (await this.isAdmin(userId)) {
@@ -43,6 +50,49 @@ const albumPermissionService = {
       ));
 
     return rows.map((row) => row.albumId);
+  },
+
+  // 批量返回当前用户在指定相册中的有效权限。
+  async listPermissions(userId: string, albumIds: string[]): Promise<Map<string, AlbumPermission>> {
+    const permissionMap = new Map<string, AlbumPermission>();
+
+    if (!albumIds.length) {
+      return permissionMap;
+    }
+
+    if (await this.isAdmin(userId)) {
+      for (const albumId of albumIds) {
+        permissionMap.set(albumId, {
+          albumId,
+          canView: true,
+          canUpload: true,
+          canDeleteOwn: true,
+          isAdmin: true,
+        });
+      }
+      return permissionMap;
+    }
+
+    const rows = await orm
+      .select()
+      .from(albumMemberTab)
+      .where(and(
+        eq(albumMemberTab.userId, userId),
+        eq(albumMemberTab.canView, 1),
+        inArray(albumMemberTab.albumId, albumIds),
+      ));
+
+    for (const row of rows) {
+      permissionMap.set(row.albumId, {
+        albumId: row.albumId,
+        canView: true,
+        canUpload: row.canUpload === 1,
+        canDeleteOwn: row.canDeleteOwn === 1,
+        isAdmin: false,
+      });
+    }
+
+    return permissionMap;
   },
 
   // 查询当前用户在指定相册中的有效权限。

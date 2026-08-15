@@ -2,6 +2,8 @@ import { AlbumPhotoProvider } from "./provider"
 import { getProxyUser } from "@/server/lib/proxy-user"
 import { PHOTO_LIST_PAGE_SIZE } from "@/server/const/global"
 import { photoService } from "@/server/service/photo-service"
+import { albumPermissionService } from "@/server/service/album-permission-service"
+import { notFound } from "next/navigation"
 
 interface AlbumPhotoLayoutProps {
   children: React.ReactNode
@@ -17,6 +19,12 @@ export default async function AlbumPhotoLayout({ children, params }: AlbumPhotoL
 
   if (!proxyUser) {
     return null
+  }
+
+  const permission = await albumPermissionService.getAlbumPermission(proxyUser.userId, albumId)
+
+  if (!permission?.canView) {
+    notFound()
   }
 
   const data = await photoService.list({
