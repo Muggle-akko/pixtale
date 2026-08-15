@@ -1,4 +1,4 @@
-import { and, asc, countDistinct, desc, eq, getTableColumns, gte, inArray, isNotNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, countDistinct, desc, eq, getTableColumns, gte, inArray, isNotNull, lt, lte, notInArray, or, sql } from 'drizzle-orm';
 import { createId } from '@/server/lib/id';
 import { type Photo, photoTab } from '@/server/entity/photo';
 import { albumPhotoTab } from '@/server/entity/album-photo';
@@ -38,6 +38,10 @@ import { type File as PhotoFile, fileTab } from '@/server/entity/file';
 import { fileService } from '@/server/service/file-service';
 import { FileTypeEnum } from '@/server/enums/file-enum';
 import { albumPermissionService } from '@/server/service/album-permission-service';
+import { userTab } from '@/server/entity/user';
+import { type AlbumPermission } from '@/server/entity/vo/album-member';
+import { photoFavoriteTab } from '@/server/entity/photo-favorite';
+import { photoFavoriteService } from '@/server/service/photo-favorite-service';
 
 // 这个模块处理照片上传、列表、回收站等业务。
 
@@ -51,11 +55,22 @@ const photoService = {
     const orderColumn = status === PhotoStatusEnum.DELETE
       ? photoTab.recycleTime
       : photoTab.takenTime;
+    const isAdmin = await albumPermissionService.isAdmin(userId);
+    let albumPermission: AlbumPermission | null = null;
+    const favoritePhotoIds = await photoFavoriteService.listPhotoIds(userId);
+    const favoritePhotoIdSet = new Set(favoritePhotoIds);
 
     const whereList = [eq(photoTab.status, status)];
 
     if (params.favorite) {
-      whereList.push(eq(photoTab.favorite, params.favorite));
+      if (params.favorite === PhotoFavoriteEnum.YES) {
+        if (!favoritePhotoIds.length) {
+          return { list: [], total: 0 };
+        }
+        whereList.push(inArray(photoTab.photoId, favoritePhotoIds));
+      } else if (favoritePhotoIds.length) {
+        whereList.push(notInArray(photoTab.photoId, favoritePhotoIds));
+      }
     }
 
     if (params.startTakenTime) {
@@ -83,7 +98,7 @@ const photoService = {
     let list: Photo[];
 
     if (params.albumId) {
-      await albumPermissionService.assertCanViewAlbum(userId, params.albumId);
+      albumPermission = await albumPermissionService.assertCanViewAlbum(userId, params.albumId);
       list = await orm
         .selectDistinct(getTableColumns(photoTab))
         .from(photoTab)
@@ -94,7 +109,7 @@ const photoService = {
         ))
         .orderBy(desc(orderColumn), desc(photoTab.photoId))
         .limit(size);
-    } else if (await albumPermissionService.isAdmin(userId)) {
+    } else if (isAdmin) {
       list = await orm
         .select()
         .from(photoTab)
@@ -122,16 +137,42 @@ const photoService = {
 
     const fileStorageList = await storageService.getStorageList();
     const photoIds = list.map((photo) => photo.photoId);
-    const [exifMap, fileMap] = await Promise.all([
+    const uploaderIds = Array.from(new Set(list.map((photo) => photo.userId)));
+    const [exifMap, fileMap, uploaders] = await Promise.all([
       exifService.listByPhotoIds(photoIds),
       fileService.listByPhotoIds(photoIds),
+      uploaderIds.length
+        ? orm.select({ userId: userTab.userId, username: userTab.username })
+          .from(userTab)
+          .where(inArray(userTab.userId, uploaderIds))
+        : Promise.resolve([]),
     ]);
+    const uploaderMap = new Map(uploaders.map((user) => [user.userId, user.username]));
 
     const result = list.map((photo) => {
       const fileStorage = fileStorageList.find((item) => item.storageId === photo.storageId);
       const domain = formatHttpUrl(fileStorage?.domain);
 
-      return this.toPhotoVo(photo, fileMap.get(photo.photoId) ?? [], fileStorage, domain, exifMap.get(photo.photoId) ?? null);
+      return this.toPhotoVo(
+        {
+          ...photo,
+          favorite: favoritePhotoIdSet.has(photo.photoId)
+            ? PhotoFavoriteEnum.YES
+            : PhotoFavoriteEnum.NO,
+        },
+        fileMap.get(photo.photoId) ?? [],
+        fileStorage,
+        domain,
+        exifMap.get(photo.photoId) ?? null,
+        {
+          uploaderName: uploaderMap.get(photo.userId) ?? null,
+          canDelete: isAdmin || Boolean(
+            params.albumId
+            && albumPermission?.canDeleteOwn
+            && photo.userId === userId
+          ),
+        },
+      );
     });
 
     return {
@@ -149,7 +190,16 @@ const photoService = {
     ];
 
     if (params.favorite) {
-      whereList.push(eq(photoTab.favorite, params.favorite));
+      const favoritePhotoIds = await photoFavoriteService.listPhotoIds(userId);
+
+      if (params.favorite === PhotoFavoriteEnum.YES) {
+        if (!favoritePhotoIds.length) {
+          return [];
+        }
+        whereList.push(inArray(photoTab.photoId, favoritePhotoIds));
+      } else if (favoritePhotoIds.length) {
+        whereList.push(notInArray(photoTab.photoId, favoritePhotoIds));
+      }
     }
 
     const tzModifier = params.tzOffset >= 0 ? `+${params.tzOffset} minutes` : `${params.tzOffset} minutes`;
@@ -234,6 +284,7 @@ const photoService = {
   async createUrl(params: PhotoCreateUrlBo, userId: string): Promise<PhotoCreateUrlVo> {
     const fileName = params.fileName?.trim();
     const storageId = params.storageId?.trim();
+    const albumId = params.albumId?.trim();
 
     if (!fileName) {
       throw new BizError('photo.fileNameRequired');
@@ -242,6 +293,12 @@ const photoService = {
     if (!storageId) {
       throw new BizError('storage.configRequired');
     }
+
+    if (!albumId) {
+      throw new BizError('album.selectRequired');
+    }
+
+    await albumPermissionService.assertCanUploadToAlbum(userId, albumId);
 
     const fileStorageList = await storageService.getStorageList();
     const fileStorage = fileStorageList.find((item) => item.storageId === storageId);
@@ -317,6 +374,16 @@ const photoService = {
 
     if (!storageId) {
       throw new BizError('storage.configRequired');
+    }
+
+    if (!albumId) {
+      throw new BizError('album.selectRequired');
+    }
+
+    const uploadPermission = await albumPermissionService.assertCanUploadToAlbum(userId, albumId);
+
+    if (uploadedKey && !uploadedKey.startsWith(`photos/${userId}/`)) {
+      throw new BizError('photo.uploadKeyInvalid', 403);
     }
 
     const fileStorageList = await storageService.getStorageList();
@@ -408,23 +475,31 @@ const photoService = {
       altitude: meta.altitude,
     });
 
-    if (albumId) {
-      await albumService.addPhoto({
-        albumIds: [albumId],
-        photoIds: [photo.photoId]
-      }, userId);
-    }
+    await albumService.addPhoto({
+      albumIds: [albumId],
+      photoIds: [photo.photoId]
+    }, userId);
 
     const domain = formatHttpUrl(fileStorage.domain);
 
     return {
-      photo: this.toPhotoVo(photo, files, fileStorage, domain, {
-        photoId,
-        exif: meta.exif,
-        latitude: meta.latitude,
-        longitude: meta.longitude,
-        altitude: meta.altitude,
-      }),
+      photo: this.toPhotoVo(
+        photo,
+        files,
+        fileStorage,
+        domain,
+        {
+          photoId,
+          exif: meta.exif,
+          latitude: meta.latitude,
+          longitude: meta.longitude,
+          altitude: meta.altitude,
+        },
+        {
+          uploaderName: null,
+          canDelete: uploadPermission.isAdmin || uploadPermission.canDeleteOwn,
+        },
+      ),
       duplicate: false,
     };
   },
@@ -435,15 +510,14 @@ const photoService = {
       throw new BizError('photo.selectRequired');
     }
 
+    await albumPermissionService.assertAdmin(userId);
+
     await orm.update(photoTab)
       .set({
         status: PhotoStatusEnum.DELETE,
         recycleTime: new Date().toISOString()
       })
-      .where(and(
-        eq(photoTab.userId, userId),
-        inArray(photoTab.photoId, params.photoIds)
-      ));
+      .where(inArray(photoTab.photoId, params.photoIds));
   },
 
   // 把指定用户的全部照片移动到回收站，并记录回收时间。
@@ -459,22 +533,7 @@ const photoService = {
 
   // 设置当前用户指定照片的收藏状态。
   async favorite(params: PhotoFavoriteBo, userId: string): Promise<void> {
-    if (!params.photoIds?.length) {
-      throw new BizError('photo.selectRequired');
-    }
-
-    if (!params.favorite) {
-      throw new BizError('photo.favoriteRequired');
-    }
-
-    await orm.update(photoTab)
-      .set({
-        favorite: params.favorite
-      })
-      .where(and(
-        eq(photoTab.userId, userId),
-        inArray(photoTab.photoId, params.photoIds)
-      ));
+    await photoFavoriteService.set(params, userId);
   },
 
   // 恢复当前用户回收站中的指定照片。
@@ -483,15 +542,14 @@ const photoService = {
       throw new BizError('photo.selectRequired');
     }
 
+    await albumPermissionService.assertAdmin(userId);
+
     await orm.update(photoTab)
       .set({
         status: PhotoStatusEnum.NORMAL,
         recycleTime: null
       })
-      .where(and(
-        eq(photoTab.userId, userId),
-        inArray(photoTab.photoId, params.photoIds)
-      ));
+      .where(inArray(photoTab.photoId, params.photoIds));
   },
 
   // 彻底删除当前用户的指定照片文件和数据库记录。
@@ -500,15 +558,14 @@ const photoService = {
       throw new BizError('photo.selectRequired');
     }
 
+    await albumPermissionService.assertAdmin(userId);
+
     const fileStorageList = await storageService.list();
 
     const photos = await orm
       .select()
       .from(photoTab)
-      .where(and(
-        eq(photoTab.userId, userId),
-        inArray(photoTab.photoId, params.photoIds)
-      ));
+      .where(inArray(photoTab.photoId, params.photoIds));
     const photoIds = photos.map((photo) => photo.photoId);
 
     if (!photoIds.length) {
@@ -528,24 +585,25 @@ const photoService = {
     await orm.delete(albumPhotoTab)
       .where(inArray(albumPhotoTab.photoId, photoIds));
 
+    await orm.delete(photoFavoriteTab)
+      .where(inArray(photoFavoriteTab.photoId, photoIds));
+
     await fileService.deleteByPhotoIds(photoIds);
 
     await orm.delete(photoTab)
-      .where(and(
-        eq(photoTab.userId, userId),
-        inArray(photoTab.photoId, photoIds)
-      ));
+      .where(inArray(photoTab.photoId, photoIds));
   },
 
   // 清理当前用户回收站中的照片文件和数据库记录。
   async clear(userId: string): Promise<void> {
+
+    await albumPermissionService.assertAdmin(userId);
 
     const setting = await settingService.get();
     const syncDelete = setting.syncDelete === SettingSyncDeleteEnum.ENABLE;
     const now = new Date().toISOString();
 
     await this.clearDeletedPhotos({
-      userId,
       recycleTime: now,
       syncDelete
     });
@@ -607,6 +665,9 @@ const photoService = {
       await orm.delete(albumPhotoTab)
         .where(inArray(albumPhotoTab.photoId, photoIds));
 
+      await orm.delete(photoFavoriteTab)
+        .where(inArray(photoFavoriteTab.photoId, photoIds));
+
       await fileService.deleteByPhotoIds(photoIds);
 
       await orm.delete(photoTab)
@@ -623,13 +684,23 @@ const photoService = {
   },
 
   // 把存储信息和文件 key 合并进照片返回对象。
-  toPhotoVo(photo: Photo, files: PhotoFile[], fileStorage?: Storage, domain?: string, exifRow: Exif | null = null): PhotoVo {
+  toPhotoVo(
+    photo: Photo,
+    files: PhotoFile[],
+    fileStorage?: Storage,
+    domain?: string,
+    exifRow: Exif | null = null,
+    access: { uploaderName?: string | null; canDelete?: boolean } = {},
+  ): PhotoVo {
     const key = this.getFileKey(files, FileTypeEnum.ORIGINAL) ?? '';
     const preview = this.getFileKey(files, FileTypeEnum.PREVIEW) ?? '';
     const thumbnail = this.getFileKey(files, FileTypeEnum.THUMBNAIL) ?? '';
 
     return {
       ...photo,
+      uploaderId: photo.userId,
+      uploaderName: access.uploaderName ?? null,
+      canDelete: access.canDelete ?? false,
       exif: exifRow?.exif ?? null,
       latitude: exifRow?.latitude ?? null,
       longitude: exifRow?.longitude ?? null,

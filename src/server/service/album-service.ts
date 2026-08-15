@@ -205,6 +205,22 @@ const albumService = {
         eq(albumPhotoTab.albumId, params.albumId),
         inArray(albumPhotoTab.photoId, params.photoIds)
       ));
+
+    const remainingRows = await orm
+      .select({ photoId: albumPhotoTab.photoId })
+      .from(albumPhotoTab)
+      .where(inArray(albumPhotoTab.photoId, params.photoIds));
+    const remainingPhotoIds = new Set(remainingRows.map((row) => row.photoId));
+    const orphanPhotoIds = params.photoIds.filter((photoId) => !remainingPhotoIds.has(photoId));
+
+    if (orphanPhotoIds.length) {
+      await orm.update(photoTab)
+        .set({
+          status: PhotoStatusEnum.DELETE,
+          recycleTime: new Date().toISOString(),
+        })
+        .where(inArray(photoTab.photoId, orphanPhotoIds));
+    }
   },
 
   // 修改当前用户指定相册的名称。
@@ -273,14 +289,12 @@ const albumService = {
 
   // 查询当前用户回收站虚拟相册，并统计已回收照片数量和最新回收封面。
   async trash(userId: string): Promise<AlbumVo> {
+    await albumPermissionService.assertAdmin(userId);
     const fileStorageList = await storageService.list();
     const photoList = await orm
       .select()
       .from(photoTab)
-      .where(and(
-        eq(photoTab.userId, userId),
-        eq(photoTab.status, PhotoStatusEnum.DELETE)
-      ))
+      .where(eq(photoTab.status, PhotoStatusEnum.DELETE))
       .orderBy(desc(photoTab.recycleTime))
     const coverPhoto = photoList[0];
     const fileStorage = fileStorageList.list.find((item) => item.storageId === coverPhoto?.storageId);

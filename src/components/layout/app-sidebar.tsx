@@ -62,8 +62,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       { title: t("navigation.settings"), url: "/settings", icon: <Settings />, isActive: false },
     ],
   }
-  // 管理员与演示用户可进入系统设置入口；写操作由后端安全中间件拦截。
-  const canViewSystem = userInfo?.type === UserTypeEnum.ADMIN || userInfo?.type === UserTypeEnum.DEMO
+  // 只有管理员可以进入系统设置入口。
+  const canViewSystem = userInfo?.type === UserTypeEnum.ADMIN
   const albumTeam = {
     name: title,
     logo: data.teams[0].logo,
@@ -71,7 +71,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const teams = canViewSystem ? [albumTeam, data.teams[1]] : [albumTeam]
   const isSystemTeam = canViewSystem && data.sysMain.some((item) => isUrlMatched(pathname, item.url))
   const activeTeam = isSystemTeam ? data.teams[1] : albumTeam
-  const navItems = isSystemTeam ? data.sysMain : data.navMain
+  const albumNavItems = userInfo?.type === UserTypeEnum.ADMIN
+    ? data.navMain
+    : data.navMain.filter((item) => item.url !== "/trash")
+  const navItems = isSystemTeam ? data.sysMain : albumNavItems
   const navUser = {
     ...data.user,
     name: userInfo?.username ?? data.user.name,

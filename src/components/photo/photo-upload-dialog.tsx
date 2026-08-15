@@ -36,6 +36,7 @@ import { type PhotoAddResultVo } from "@/server/entity/vo/photo"
 import { UserTypeEnum } from "@/server/enums/user-enum"
 import { BLOB_STORAGE_ID } from "@/server/lib/blob"
 import { useTranslations } from "next-intl"
+import { useAlbumStore } from "@/store/album-store"
 
 // Vercel 构建会注入 NEXT_PUBLIC_VERCEL_ENV，本地开发默认关闭。
 const useDirectUpload = Boolean(process.env.NEXT_PUBLIC_VERCEL_ENV)
@@ -178,9 +179,14 @@ export function PhotoUploadDialog() {
   const storages = useStorageStore((state) => state.storages) // 全局可选存储配置列表。
   const open = usePhotoStore((state) => state.uploadOpen) // 上传弹窗是否打开。
   const uploadAlbumId = usePhotoStore((state) => state.uploadAlbumId) // 当前上传目标相册 id。
+  const albums = useAlbumStore((state) => state.albums) // 当前用户可见相册，用于选择有上传权限的目标。
   const closeUpload = usePhotoStore((state) => state.closeUpload) // 关闭上传弹窗的方法。
   const addUploadedPhoto = usePhotoStore((state) => state.addUploadedPhoto) // 上传成功后写入照片列表的方法。
   const selectedStorageId = storageId ?? storages[0]?.storageId ?? null
+  // targetAlbumId 保存从照片总览上传时手动选择的目标相册。
+  const [targetAlbumId, setTargetAlbumId] = useState<string | null>(null)
+  const uploadableAlbums = albums.filter((album) => album.canUpload)
+  const selectedAlbumId = uploadAlbumId ?? targetAlbumId ?? uploadableAlbums[0]?.albumId ?? null
 
   useEffect(() => {
     return () => {
@@ -196,7 +202,22 @@ export function PhotoUploadDialog() {
 
   // 打开系统文件选择器。
   function openFilePicker() {
+    if (!selectedAlbumId) {
+      toast.error(t("selectAlbumRequired"))
+      return
+    }
+
     fileInputRef.current?.click()
+  }
+
+  // 切换目标相册，并同步尚未完成的待上传照片。
+  function changeTargetAlbum(albumId: string) {
+    setTargetAlbumId(albumId)
+    setPreviews(previewsRef.current.map((preview) => (
+      preview.status === "success" || preview.status === "skipped"
+        ? preview
+        : { ...preview, albumId }
+    )))
   }
 
   // 清空弹窗内已生成的预览。
@@ -223,7 +244,7 @@ export function PhotoUploadDialog() {
       id: `${Math.random()}`,
       cover,
       file,
-      albumId: uploadAlbumId,
+      albumId: selectedAlbumId,
       progress: 100,
       status: "new",
     }
@@ -354,10 +375,15 @@ export function PhotoUploadDialog() {
       // Vercel / Blob 走客户端直传后再调 add，避开函数 body 限制。
       const directUpload = useDirectUpload || currentStorageId === BLOB_STORAGE_ID
       if (directUpload) {
+        if (!item.albumId) {
+          throw new Error(t("selectAlbumRequired"))
+        }
+
         const contentType = item.file.type || "application/octet-stream"
         const { url, key } = await photoCreateUrl({
           fileName: item.file.name,
           storageId: currentStorageId,
+          albumId: item.albumId,
           contentType,
         })
 
@@ -473,6 +499,11 @@ export function PhotoUploadDialog() {
       return
     }
 
+    if (!selectedAlbumId && previewsRef.current.length > 0) {
+      toast.error(t("selectAlbumRequired"))
+      return
+    }
+
     pausedRef.current = false
     uploadStorageIdRef.current = selectedStorageId
     const count = enqueueUploadItems()
@@ -502,6 +533,22 @@ export function PhotoUploadDialog() {
           <DialogDescription className="sr-only">
             Select photos to upload to the current photo list.
           </DialogDescription>
+          <Select
+            value={selectedAlbumId ?? undefined}
+            onValueChange={changeTargetAlbum}
+            disabled={Boolean(uploadAlbumId) || uploading}
+          >
+            <SelectTrigger className="mt-1 w-full">
+              <SelectValue placeholder={t("selectAlbum")} />
+            </SelectTrigger>
+            <SelectContent>
+              {uploadableAlbums.map((album) => (
+                <SelectItem key={album.albumId} value={album.albumId}>
+                  {album.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </DialogHeader>
         <div className="min-h-0 overflow-y-auto [scrollbar-width:thin]">
           <div className="grid grid-cols-3 content-start gap-1 md:grid-cols-4">

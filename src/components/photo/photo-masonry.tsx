@@ -114,6 +114,8 @@ const PhotoMasonry = memo(function PhotoMasonry({
 
   syncPhotoPositioner(photos, positioner.columnWidth, positioner)
   const visibleSelectedPhotoIds = selectedPhotoIds.filter((photoId) => photos.some((photo) => photo.photoId === photoId))
+  const selectedPhotos = photos.filter((photo) => visibleSelectedPhotoIds.includes(photo.photoId))
+  const canDeleteSelected = selectedPhotos.length > 0 && selectedPhotos.every((photo) => photo.canDelete)
 
 
   useEffect(() => {
@@ -323,7 +325,7 @@ const PhotoMasonry = memo(function PhotoMasonry({
       <PhotoSelectionDrawer
         open={visibleSelectedPhotoIds.length > 0}
         onClose={clearSelectedPhotos}
-        onDelete={deleteSelectedPhotos}
+        onDelete={onPhotoDelete && canDeleteSelected ? deleteSelectedPhotos : undefined}
         onSelectAll={selectFirstPhotos}
         onRestore={onPhotoRestore ? restoreSelectedPhotos : undefined}
         onAlbumOpen={onAlbumOpen ? openAlbumDialog : undefined}
@@ -341,6 +343,12 @@ const PhotoMasonry = memo(function PhotoMasonry({
           render={(props) => (
             <PhotoCard
               {...props}
+              selectable={Boolean(
+                onPhotoRestore
+                || onAlbumOpen
+                || onAlbumRemove
+                || (onPhotoDelete && props.data.canDelete)
+              )}
               selected={visibleSelectedPhotoIds.includes(props.data.photoId)}
               selectionActive={visibleSelectedPhotoIds.length > 0}
               onOpen={() => onPhotoOpen?.(props.index)}

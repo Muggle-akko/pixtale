@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { MoreHorizontalIcon } from "lucide-react"
+import { MoreHorizontalIcon, UsersIcon } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -16,12 +16,13 @@ interface AlbumActionMenuProps {
   // 当前按钮图标是否显示阴影。
   shadow?: boolean
   onRename: () => void
+  onPermissions: () => void
   onTop: () => void
   onDelete: () => void
 }
 
 // 渲染相册卡片右上角的更多操作菜单。
-export function AlbumActionMenu({ shadow = true, onRename, onTop, onDelete }: AlbumActionMenuProps) {
+export function AlbumActionMenu({ shadow = true, onRename, onPermissions, onTop, onDelete }: AlbumActionMenuProps) {
   const t = useTranslations("albums")
   // open 记录当前下拉菜单是否打开，用于打开时隐藏图标阴影。
   const [open, setOpen] = useState(false)
@@ -44,7 +45,11 @@ export function AlbumActionMenu({ shadow = true, onRename, onTop, onDelete }: Al
           />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-24 min-w-24">
+      <DropdownMenuContent align="end" className="min-w-32">
+        <DropdownMenuItem onSelect={onPermissions}>
+          <UsersIcon />
+          {t("actions.permissions")}
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={onRename}>
           {t("actions.rename")}
         </DropdownMenuItem>

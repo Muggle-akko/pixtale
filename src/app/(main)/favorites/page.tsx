@@ -26,6 +26,7 @@ import { useApp } from "@/app/(main)/provider"
 import { PhotoDateDrawer } from "@/components/photo/photo-date-drawer"
 import { PhotoMasonrySkeleton } from "@/components/photo/photo-masonry-skeleton"
 import { useTranslations } from "next-intl"
+import { UserTypeEnum } from "@/server/enums/user-enum"
 
 const AlbumSelectDialog = dynamic(
   () => import("@/components/album/album-select-dialog").then((mod) => mod.AlbumSelectDialog),
@@ -40,7 +41,8 @@ const PhotoViewer = dynamic(
 export default function Page() {
   const t = useTranslations("favorites")
   const { initialPhotos } = useFavoriteContext()
-  const { sidebarOpen, setSidebarOpen, refreshAlbums } = useApp()
+  const { sidebarOpen, setSidebarOpen, refreshAlbums, userInfo } = useApp()
+  const isAdmin = userInfo?.type === UserTypeEnum.ADMIN
   // isBrowser 标记当前是否在浏览器环境，SSR 阶段显示骨架屏。
   const [isBrowser, setIsBrowser] = useState(false)
   const {
@@ -161,8 +163,8 @@ export default function Page() {
                 onReachBottom={loadMorePhotos}
                 onPhotoOpen={openPhoto}
                 onPhotoFavorite={changePhotoFavorite}
-                onPhotoDelete={recyclePhotos}
-                onAlbumOpen={openAlbumDialog}
+                onPhotoDelete={isAdmin ? recyclePhotos : undefined}
+                onAlbumOpen={isAdmin ? openAlbumDialog : undefined}
               />
             ) : (
               <PhotoMasonrySkeleton photos={initialPhotos} />
@@ -177,11 +179,13 @@ export default function Page() {
         onBack={closePhoto}
         onBrowserBack={closePhoto}
       />
-      <AlbumSelectDialog
-        open={albumDialogOpen}
-        onOpenChange={setAlbumDialogOpen}
-        onAlbumSelect={changePhotoAlbum}
-      />
+      {isAdmin && (
+        <AlbumSelectDialog
+          open={albumDialogOpen}
+          onOpenChange={setAlbumDialogOpen}
+          onAlbumSelect={changePhotoAlbum}
+        />
+      )}
     </>
   )
 }

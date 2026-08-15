@@ -48,9 +48,10 @@ interface PhotoCreateUrlBo {
   fileName: string;
   // 目标存储配置 id。
   storageId: string;
+  // 目标相册 id，用于服务端校验上传权限。
+  albumId: string;
   // 上传文件 MIME，需与 PUT 时 Content-Type 一致。
   contentType?: string;
 }
 
 export type { PhotoCreateUrlBo, PhotoDeleteBo, PhotoExistsBo, PhotoFavoriteBo, PhotoListBo, PhotoRecycleBo, PhotoRestoreBo, PhotoTakenDateListBo };
-

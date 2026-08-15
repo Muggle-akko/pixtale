@@ -14,8 +14,9 @@ import { orm } from '@/server/infra/db';
 import { cache } from '@/server/infra/cache';
 import { AUTH_CACHE_KEY } from '@/server/const/cache';
 import { AUTH_CACHE_TTL } from '@/server/const/global';
-import { albumService } from '@/server/service/album-service';
-import { photoService } from '@/server/service/photo-service';
+import { albumMemberTab } from '@/server/entity/album-member';
+import { albumTab } from '@/server/entity/album';
+import { photoFavoriteTab } from '@/server/entity/photo-favorite';
 
 // 这个模块处理用户数据查询和写入相关业务。
 
@@ -351,8 +352,12 @@ const userService = {
     await cache.delete(AUTH_CACHE_KEY + params.userId);
   },
 
-  // 删除指定用户及其关联相册，并把照片移入回收站。
-  async delete(deleteUserId: string): Promise<void> {
+  // 删除指定成员账号，并把其照片和旧相册归属转交给当前管理员。
+  async delete(deleteUserId: string, adminUserId: string): Promise<void> {
+
+    if (deleteUserId === adminUserId) {
+      throw new BizError('user.deleteSelfForbidden', 403);
+    }
 
     const [user] = await orm
       .select({
@@ -367,8 +372,19 @@ const userService = {
         .where(eq(avatarBase64Tab.id, user.avatar));
     }
 
-    await photoService.recycleByUserId(deleteUserId);
-    await albumService.deleteByUserId(deleteUserId);
+    await orm.update(photoTab)
+      .set({ userId: adminUserId })
+      .where(eq(photoTab.userId, deleteUserId));
+
+    await orm.update(albumTab)
+      .set({ userId: adminUserId })
+      .where(eq(albumTab.userId, deleteUserId));
+
+    await orm.delete(albumMemberTab)
+      .where(eq(albumMemberTab.userId, deleteUserId));
+
+    await orm.delete(photoFavoriteTab)
+      .where(eq(photoFavoriteTab.userId, deleteUserId));
 
     await orm.delete(userTab)
       .where(eq(userTab.userId, deleteUserId));

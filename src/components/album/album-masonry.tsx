@@ -15,6 +15,7 @@ import { type AlbumVo } from "@/server/entity/vo/album"
 interface AlbumMasonryProps {
   albums: AlbumVo[]
   resetKey?: number
+  onAlbumPermissions?: (album: AlbumVo) => void
   onAlbumRename?: (album: AlbumVo) => void
   onAlbumTop?: (album: AlbumVo) => void
   onAlbumDelete?: (album: AlbumVo) => void
@@ -66,7 +67,7 @@ function syncAlbumPositioner(items: AlbumVo[], columnWidth: number, positioner: 
 }
 
 // 渲染相册虚拟滚动列表。
-export function AlbumMasonry({ albums, resetKey = 0, onAlbumRename, onAlbumTop, onAlbumDelete }: AlbumMasonryProps) {
+export function AlbumMasonry({ albums, resetKey = 0, onAlbumPermissions, onAlbumRename, onAlbumTop, onAlbumDelete }: AlbumMasonryProps) {
   const { sidebarOpen } = useApp()
   // wrapRef 用于监听相册列表外层真实可视宽度。
   const wrapRef = useRef<HTMLDivElement | null>(null)
@@ -202,6 +203,7 @@ export function AlbumMasonry({ albums, resetKey = 0, onAlbumRename, onAlbumTop, 
         render={(props) => (
           <AlbumCard
             {...props}
+            onPermissions={onAlbumPermissions}
             onRename={onAlbumRename}
             onTop={onAlbumTop}
             onDelete={onAlbumDelete}

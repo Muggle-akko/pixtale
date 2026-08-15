@@ -12,13 +12,14 @@ import { useAlbumStore } from "@/store/album-store"
 type AlbumCardProps = Partial<RenderComponentProps<AlbumVo>> & {
   data: AlbumVo
   href?: string
+  onPermissions?: (album: AlbumVo) => void
   onRename?: (album: AlbumVo) => void
   onTop?: (album: AlbumVo) => void
   onDelete?: (album: AlbumVo) => void
 }
 
 // 渲染虚拟列表中的单个相册卡片。
-export function AlbumCard({ data, width, href, onRename, onTop, onDelete }: AlbumCardProps) {
+export function AlbumCard({ data, width, href, onPermissions, onRename, onTop, onDelete }: AlbumCardProps) {
   const setCurrentAlbumName = useAlbumStore((state) => state.setCurrentAlbumName)
   const thumbnailSrc = data.thumbnail
   const placeholder = useMemo(() => getThumbHashUrl(data.thumbHash), [data.thumbHash])
@@ -31,6 +32,11 @@ export function AlbumCard({ data, width, href, onRename, onTop, onDelete }: Albu
   // 把重命名操作和当前相册交给上层页面。
   function renameAlbum() {
     onRename?.(data)
+  }
+
+  // 把成员权限操作和当前相册交给上层页面。
+  function managePermissions() {
+    onPermissions?.(data)
   }
 
   // 把置顶操作和当前相册交给上层页面。
@@ -89,10 +95,11 @@ export function AlbumCard({ data, width, href, onRename, onTop, onDelete }: Albu
           </div>
         </div>
       </Link>
-      {onRename && onTop && onDelete && (
+      {onPermissions && onRename && onTop && onDelete && (
         <div className="absolute top-[4px] right-[4px] z-10">
           <AlbumActionMenu
             shadow={Boolean(thumbnailSrc)}
+            onPermissions={managePermissions}
             onRename={renameAlbum}
             onTop={topAlbum}
             onDelete={deleteAlbum}

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 interface PhotoSelectionDrawerProps {
   open: boolean
   onClose: () => void
-  onDelete: () => void
+  onDelete?: () => void
   onSelectAll: () => void
   onRestore?: () => void
   onAlbumOpen?: () => void
@@ -75,9 +75,11 @@ export function PhotoSelectionDrawer({ open, onClose, onDelete, onSelectAll, onR
               <RotateCcwIcon />
             </Button>
           )}
-          <Button size="icon" variant="ghost" onClick={onDelete} aria-label="Delete photos">
-            <Trash2Icon />
-          </Button>
+          {onDelete && (
+            <Button size="icon" variant="ghost" onClick={onDelete} aria-label="Delete photos">
+              <Trash2Icon />
+            </Button>
+          )}
           {onAlbumOpen && (
             <Button size="icon" variant="ghost" onClick={openAlbumDialog} aria-label="Add to album">
               <FolderPlusIcon />

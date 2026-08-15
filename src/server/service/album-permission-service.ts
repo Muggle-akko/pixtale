@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import BizError from '@/server/error/biz-error';
 import { albumMemberTab } from '@/server/entity/album-member';
 import { albumPhotoTab } from '@/server/entity/album-photo';
@@ -242,7 +242,7 @@ const albumPermissionService = {
         status: userTab.status,
       })
       .from(userTab)
-      .where(ne(userTab.type, UserTypeEnum.ADMIN));
+      .where(eq(userTab.type, UserTypeEnum.NORMAL));
 
     if (!users.length) {
       return [];

@@ -160,6 +160,28 @@ const migrationList = [
       FROM album`,
     ],
   },
+  {
+    version: '2026081502_photo_favorite',
+    sqlList: [
+      `CREATE TABLE IF NOT EXISTS photo_favorite (
+          id TEXT PRIMARY KEY,
+          photo_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          create_time TEXT NOT NULL,
+          UNIQUE(photo_id, user_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_photo_favorite_user_time
+          ON photo_favorite (user_id, create_time)`,
+      `INSERT OR IGNORE INTO photo_favorite (id, photo_id, user_id, create_time)
+      SELECT
+          'migration-' || photo_id || '-' || user_id,
+          photo_id,
+          user_id,
+          strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+      FROM photo
+      WHERE favorite = 2`,
+    ],
+  },
 ];
 
 // 在 Turso 上顺序执行尚未应用的版本化迁移。

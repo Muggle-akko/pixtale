@@ -51,9 +51,7 @@ export function UserAddDialog({ title, open, user, onOpenChange, onUserConfirm }
     ...option,
     label: option.value === UserTypeEnum.ADMIN
       ? t("admin")
-      : option.value === UserTypeEnum.DEMO
-        ? t("demo")
-        : t("user"),
+      : t("user"),
   }))
   // resetTimerRef 保存关闭动画结束后重置表单的定时器。
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -72,8 +70,10 @@ export function UserAddDialog({ title, open, user, onOpenChange, onUserConfirm }
 
   useEffect(() => {
     if (open) {
-      setForm(createUserForm(user))
-      setErrors({})
+      queueMicrotask(() => {
+        setForm(createUserForm(user))
+        setErrors({})
+      })
     }
   }, [open, user])
 

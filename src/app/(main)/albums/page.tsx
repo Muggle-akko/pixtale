@@ -23,6 +23,8 @@ import { useApp } from "@/app/(main)/provider"
 import { albumAdd, albumDelete, albumList, albumSetName, albumSetTop } from "@/request/album"
 import { type AlbumVo } from "@/server/entity/vo/album"
 import { useTranslations } from "next-intl"
+import { UserTypeEnum } from "@/server/enums/user-enum"
+import { AlbumMemberDialog } from "@/components/album/album-member-dialog"
 
 const AlbumMasonry = dynamic(
   () => import("@/components/album/album-masonry").then((mod) => mod.AlbumMasonry),
@@ -32,7 +34,8 @@ const AlbumMasonry = dynamic(
 export default function Page() {
   const t = useTranslations("albums")
   const { initialAlbums } = useAlbumContext()
-  const { sidebarOpen, setSidebarOpen, refreshAlbums } = useApp()
+  const { sidebarOpen, setSidebarOpen, refreshAlbums, userInfo } = useApp()
+  const isAdmin = userInfo?.type === UserTypeEnum.ADMIN
   // albums 保存当前页面展示的相册列表。
   const [albums, setAlbums] = useState<AlbumVo[]>(initialAlbums)
   // albumListKey 用于强制刷新相册瀑布流布局。
@@ -45,6 +48,8 @@ export default function Page() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   // deletingAlbum 保存当前等待删除确认的相册。
   const [deletingAlbum, setDeletingAlbum] = useState<AlbumVo | null>(null)
+  // permissionAlbum 保存当前正在配置成员权限的相册。
+  const [permissionAlbum, setPermissionAlbum] = useState<AlbumVo | null>(null)
 
   useEffect(() => {
     // 刷新相册页时禁用浏览器滚动恢复，并回到列表顶部。
@@ -83,6 +88,11 @@ export default function Page() {
   function renameAlbum(album: AlbumVo) {
     setRenamingAlbum(album)
     setRenameOpen(true)
+  }
+
+  // 打开指定相册的成员权限弹框。
+  function manageAlbumPermissions(album: AlbumVo) {
+    setPermissionAlbum(album)
   }
 
   // 处理相册置顶操作。
@@ -192,17 +202,20 @@ export default function Page() {
                 </BreadcrumbList>
               </Breadcrumb>
             </div>
-            <div className="fixed left-[calc(100vw-3.5rem)]  md:left-[calc(100vw-4rem)] top-0 flex h-12 items-center gap-3 px-4">
-              <AlbumAddDialog title={t("addTitle")} onNameConfirm={addAlbum} />
-            </div>
+            {isAdmin && (
+              <div className="fixed left-[calc(100vw-3.5rem)] top-0 flex h-12 items-center gap-3 px-4 md:left-[calc(100vw-4rem)]">
+                <AlbumAddDialog title={t("addTitle")} onNameConfirm={addAlbum} />
+              </div>
+            )}
           </header>
           <div className="px-2 md:pl-3 md:pr-2">
             <AlbumMasonry
               albums={albums}
               resetKey={albumListKey}
-              onAlbumRename={renameAlbum}
-              onAlbumTop={topAlbum}
-              onAlbumDelete={openDeleteAlbum}
+              onAlbumPermissions={isAdmin ? manageAlbumPermissions : undefined}
+              onAlbumRename={isAdmin ? renameAlbum : undefined}
+              onAlbumTop={isAdmin ? topAlbum : undefined}
+              onAlbumDelete={isAdmin ? openDeleteAlbum : undefined}
             />
           </div>
         </SidebarInset>
@@ -221,6 +234,15 @@ export default function Page() {
         title={t("deleteTitle")}
         description={t("deleteDescription")}
         onConfirm={confirmDeleteAlbum}
+      />
+      <AlbumMemberDialog
+        open={Boolean(permissionAlbum)}
+        album={permissionAlbum}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPermissionAlbum(null)
+          }
+        }}
       />
     </>
   )

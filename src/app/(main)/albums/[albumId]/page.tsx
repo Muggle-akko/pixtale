@@ -2,6 +2,7 @@
 import dynamic from "next/dynamic"
 import { useParams, useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
+import { UserTypeEnum } from "@/server/enums/user-enum"
 
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { Button } from "@/components/ui/button"
@@ -47,8 +48,11 @@ export default function Page() {
   const router = useRouter()
   const { albumId } = useParams<{ albumId: string }>()
   const { initialPhotos } = useAlbumPhotoContext()
-  const { sidebarOpen, setSidebarOpen, refreshAlbums } = useApp()
+  const { sidebarOpen, setSidebarOpen, refreshAlbums, userInfo } = useApp()
   const currentAlbumName = useAlbumStore((state) => state.currentAlbumName)
+  const albums = useAlbumStore((state) => state.albums)
+  const currentAlbum = albums.find((album) => album.albumId === albumId)
+  const isAdmin = userInfo?.type === UserTypeEnum.ADMIN
   const albumIdRef = useRef(albumId)
   // isBrowser 标记当前是否在浏览器环境，SSR 阶段显示骨架屏。
   const [isBrowser, setIsBrowser] = useState(false)
@@ -132,12 +136,17 @@ export default function Page() {
     })
   }, [photos])
 
-  // 批量回收当前相册选中的照片。
-  const recyclePhotos = useCallback((photoIds: string[]) => {
-    photoRecycle({ photoIds }).then(() => {
+  // 管理员回收照片，普通成员仅从当前相册移除本人上传的照片。
+  const deletePhotos = useCallback((photoIds: string[]) => {
+    const request = isAdmin
+      ? photoRecycle({ photoIds })
+      : albumRemovePhoto({ albumId, photoIds })
+
+    request.then(() => {
       removePhotos(photoIds)
+      void refreshAlbums()
     })
-  }, [removePhotos])
+  }, [albumId, isAdmin, refreshAlbums, removePhotos])
 
   // 批量把当前相册选中的照片移出相册。
   const removeAlbumPhotos = useCallback((photoIds: string[]) => {
@@ -207,14 +216,17 @@ export default function Page() {
             </div>
             <div className="fixed left-[calc(100vw-5.75rem)] md:left-[calc(100vw-6.25rem)] top-0 flex h-12 items-center gap-1 px-4">
               <PhotoDateDrawer albumId={albumId} onRangeChange={changePhotoTime} />
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={() => openUpload(albumId)}
-              >
-                <PlusIcon />
-              </Button>
+              {currentAlbum?.canUpload && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => openUpload(albumId)}
+                  aria-label={t("uploadPhotos")}
+                >
+                  <PlusIcon />
+                </Button>
+              )}
             </div>
           </header>
           <div className="px-1 md:pl-1 md:pr-0">
@@ -225,9 +237,9 @@ export default function Page() {
                 onReachBottom={loadMorePhotos}
                 onPhotoOpen={openPhoto}
                 onPhotoFavorite={changePhotoFavorite}
-                onPhotoDelete={recyclePhotos}
-                onAlbumOpen={openAlbumDialog}
-                onAlbumRemove={removeAlbumPhotos}
+                onPhotoDelete={isAdmin || currentAlbum?.canDeleteOwn ? deletePhotos : undefined}
+                onAlbumOpen={isAdmin ? openAlbumDialog : undefined}
+                onAlbumRemove={isAdmin ? removeAlbumPhotos : undefined}
               />
             ) : (
               <PhotoMasonrySkeleton photos={initialPhotos} />
@@ -242,11 +254,13 @@ export default function Page() {
         onBack={closePhoto}
         onBrowserBack={closePhoto}
       />
-      <AlbumSelectDialog
-        open={albumDialogOpen}
-        onOpenChange={setAlbumDialogOpen}
-        onAlbumSelect={changePhotoAlbum}
-      />
+      {isAdmin && (
+        <AlbumSelectDialog
+          open={albumDialogOpen}
+          onOpenChange={setAlbumDialogOpen}
+          onAlbumSelect={changePhotoAlbum}
+        />
+      )}
     </>
   )
 }

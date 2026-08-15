@@ -9,7 +9,7 @@ import { setProxyUserHeaders } from '@/server/lib/proxy-user';
 
 // 这个模块代理页面路由，未登录时跳转登录页。
 
-const SYSTEM_PATHS = ['/users', '/settings', '/storage'];
+const SYSTEM_PATHS = ['/users', '/settings', '/storage', '/trash'];
 const PUBLIC_FILE_REG = /\.(?:png|jpg|jpeg|gif|webp|svg|ico)$/i;
 
 // 判断当前路径是否允许未登录访问。
@@ -107,11 +107,10 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(photoUrl);
   }
 
-  // 系统设置页面仅管理员与演示用户可进入。
+  // 系统设置和回收站页面仅管理员可进入。
   if (
     isSystemPath(pathname)
     && authInfo.type !== UserTypeEnum.ADMIN
-    && authInfo.type !== UserTypeEnum.DEMO
   ) {
     const notFoundUrl = req.nextUrl.clone();
     notFoundUrl.pathname = '/_not-found';

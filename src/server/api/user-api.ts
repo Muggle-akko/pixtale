@@ -74,6 +74,6 @@ app.post('/user/toggleStatus', async (c: Context) => {
 // 删除指定用户及其关联数据。
 app.post('/user/delete', async (c: Context) => {
   const params = await c.req.json<UserDeleteBo>();
-  await userService.delete(params.userId);
+  await userService.delete(params.userId, getUserId());
   return c.json(result.ok());
 });

@@ -29,6 +29,8 @@ import { PhotoMasonrySkeleton } from "@/components/photo/photo-masonry-skeleton"
 import { usePhotoContext } from "./provider"
 import { useApp } from "@/app/(main)/provider"
 import { useTranslations } from "next-intl"
+import { useAlbumStore } from "@/store/album-store"
+import { UserTypeEnum } from "@/server/enums/user-enum"
 
 const AlbumSelectDialog = dynamic(
   () => import("@/components/album/album-select-dialog").then((mod) => mod.AlbumSelectDialog),
@@ -44,7 +46,10 @@ const PhotoViewer = dynamic(
 export default function Page() {
   const t = useTranslations("photos")
   const { initialPhotos } = usePhotoContext()
-  const { sidebarOpen, setSidebarOpen, refreshAlbums } = useApp()
+  const { sidebarOpen, setSidebarOpen, refreshAlbums, userInfo } = useApp()
+  const albums = useAlbumStore((state) => state.albums)
+  const hasUploadAlbum = albums.some((album) => album.canUpload)
+  const isAdmin = userInfo?.type === UserTypeEnum.ADMIN
   // isBrowser 标记当前是否在浏览器环境，SSR 阶段显示骨架屏。
   const [isBrowser, setIsBrowser] = useState(false)
   const {
@@ -174,14 +179,17 @@ export default function Page() {
             </div>
             <div className="fixed left-[calc(100vw-5.75rem)]  md:left-[calc(100vw-6.25rem)] top-0 flex h-12 items-center gap-1 px-4">
               <PhotoDateDrawer onRangeChange={changePhotoTime} />
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={() => openUpload(null)}
-              >
-                <Plus />
-              </Button>
+              {hasUploadAlbum && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => openUpload(null)}
+                  aria-label={t("uploadPhotos")}
+                >
+                  <Plus />
+                </Button>
+              )}
             </div>
           </header>
           <div className="px-1 md:pl-1 md:pr-0">
@@ -192,8 +200,8 @@ export default function Page() {
                 onReachBottom={loadMorePhotos}
                 onPhotoOpen={openPhoto}
                 onPhotoFavorite={changePhotoFavorite}
-                onPhotoDelete={recyclePhotos}
-                onAlbumOpen={openAlbumDialog}
+                onPhotoDelete={isAdmin ? recyclePhotos : undefined}
+                onAlbumOpen={isAdmin ? openAlbumDialog : undefined}
               />
             ) : (
               <PhotoMasonrySkeleton photos={initialPhotos} />
@@ -208,11 +216,13 @@ export default function Page() {
         onBack={closePhoto}
         onBrowserBack={closePhoto}
       />
-      <AlbumSelectDialog
-        open={albumDialogOpen}
-        onOpenChange={setAlbumDialogOpen}
-        onAlbumSelect={changePhotoAlbum}
-      />
+      {isAdmin && (
+        <AlbumSelectDialog
+          open={albumDialogOpen}
+          onOpenChange={setAlbumDialogOpen}
+          onAlbumSelect={changePhotoAlbum}
+        />
+      )}
     </>
   )
 }
