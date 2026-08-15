@@ -203,6 +203,26 @@ const migrationList = [
           ON photo_comment (user_id)`,
     ],
   },
+  {
+    version: '2026081504_audit_log',
+    sqlList: [
+      `CREATE TABLE IF NOT EXISTS audit_log (
+          audit_id TEXT PRIMARY KEY,
+          actor_user_id TEXT,
+          actor_name TEXT NOT NULL,
+          action TEXT NOT NULL,
+          target_type TEXT NOT NULL,
+          target_id TEXT,
+          target_name TEXT,
+          details TEXT,
+          create_time TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_audit_log_create_time
+          ON audit_log (create_time)`,
+      `CREATE INDEX IF NOT EXISTS idx_audit_log_actor_time
+          ON audit_log (actor_user_id, create_time)`,
+    ],
+  },
 ];
 
 // 在 Turso 上顺序执行尚未应用的版本化迁移。

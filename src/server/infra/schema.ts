@@ -1,4 +1,5 @@
 import { albumTab } from '@/server/entity/album';
+import { auditLogTab } from '@/server/entity/audit-log';
 import { albumMemberTab } from '@/server/entity/album-member';
 import { albumPhotoTab } from '@/server/entity/album-photo';
 import { avatarBase64Tab } from '@/server/entity/avatar-base64';
@@ -15,6 +16,7 @@ import { userTab } from '@/server/entity/user';
 // 这个模块统一导出 Drizzle 数据库表结构。
 
 const schema = {
+  auditLogTab,
   albumMemberTab,
   albumPhotoTab,
   albumTab,

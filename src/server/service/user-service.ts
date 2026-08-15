@@ -18,6 +18,7 @@ import { albumMemberTab } from '@/server/entity/album-member';
 import { albumTab } from '@/server/entity/album';
 import { photoFavoriteTab } from '@/server/entity/photo-favorite';
 import { photoCommentTab } from '@/server/entity/photo-comment';
+import { auditLogService } from '@/server/service/audit-log-service';
 
 // 这个模块处理用户数据查询和写入相关业务。
 
@@ -362,7 +363,8 @@ const userService = {
 
     const [user] = await orm
       .select({
-        avatar: userTab.avatar
+        avatar: userTab.avatar,
+        username: userTab.username,
       })
       .from(userTab)
       .where(eq(userTab.userId, deleteUserId))
@@ -394,6 +396,14 @@ const userService = {
 
     await orm.delete(userTab)
       .where(eq(userTab.userId, deleteUserId));
+
+    await auditLogService.record({
+      actorUserId: adminUserId,
+      action: 'user.delete',
+      targetType: 'user',
+      targetId: deleteUserId,
+      targetName: user?.username ?? null,
+    });
 
     // 删除用户后清除登录缓存。
     await cache.delete(AUTH_CACHE_KEY + deleteUserId);

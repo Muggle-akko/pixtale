@@ -14,6 +14,7 @@ import { fileService } from '@/server/service/file-service';
 import { FileTypeEnum } from '@/server/enums/file-enum';
 import { type File } from '@/server/entity/file';
 import { albumPermissionService } from '@/server/service/album-permission-service';
+import { auditLogService } from '@/server/service/audit-log-service';
 
 // 这个模块处理相册数据写入相关业务。
 
@@ -221,6 +222,17 @@ const albumService = {
         })
         .where(inArray(photoTab.photoId, orphanPhotoIds));
     }
+
+    await auditLogService.record({
+      actorUserId: userId,
+      action: 'album.photo.remove',
+      targetType: 'album',
+      targetId: params.albumId,
+      details: {
+        photoIds: params.photoIds,
+        orphanPhotoIds,
+      },
+    });
   },
 
   // 修改当前用户指定相册的名称。
@@ -255,12 +267,25 @@ const albumService = {
   async delete(params: AlbumDeleteBo, userId: string): Promise<void> {
 
     await albumPermissionService.assertAdmin(userId);
+    const [album] = await orm
+      .select({ name: albumTab.name })
+      .from(albumTab)
+      .where(eq(albumTab.albumId, params.albumId))
+      .limit(1);
 
     await orm.delete(albumPhotoTab)
       .where(eq(albumPhotoTab.albumId, params.albumId));
 
     await orm.delete(albumTab)
       .where(eq(albumTab.albumId, params.albumId));
+
+    await auditLogService.record({
+      actorUserId: userId,
+      action: 'album.delete',
+      targetType: 'album',
+      targetId: params.albumId,
+      targetName: album?.name ?? null,
+    });
 
   },
 

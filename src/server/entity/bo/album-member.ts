@@ -17,4 +17,12 @@ interface AlbumMemberRemoveBo {
   userId: string;
 }
 
-export type { AlbumMemberListBo, AlbumMemberRemoveBo, AlbumMemberSetBo };
+interface AlbumMemberBatchSetBo {
+  albumId: string;
+  userIds: string[];
+  canView: boolean;
+  canUpload: boolean;
+  canDeleteOwn: boolean;
+}
+
+export type { AlbumMemberBatchSetBo, AlbumMemberListBo, AlbumMemberRemoveBo, AlbumMemberSetBo };

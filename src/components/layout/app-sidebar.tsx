@@ -16,7 +16,7 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar"
-import { Library, MonitorCog, Image, Heart, Trash2, FolderOpen, Database, User, Settings } from "lucide-react"
+import { Library, MonitorCog, Image, Heart, Trash2, FolderOpen, Database, User, Settings, ClipboardList } from "lucide-react"
 
 // 判断当前浏览器路径是否命中菜单 URL。
 function isUrlMatched(pathname: string, url: string) {
@@ -59,6 +59,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     sysMain: [
       { title: t("navigation.storage"), url: "/storage", icon: <Database />, isActive: false },
       { title: t("navigation.users"), url: "/users", icon: <User />, isActive: false },
+      { title: t("navigation.audit"), url: "/audit", icon: <ClipboardList />, isActive: false },
       { title: t("navigation.settings"), url: "/settings", icon: <Settings />, isActive: false },
     ],
   }

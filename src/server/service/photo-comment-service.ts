@@ -7,6 +7,7 @@ import { orm } from '@/server/infra/db';
 import { createId } from '@/server/lib/id';
 import { albumPermissionService } from '@/server/service/album-permission-service';
 import { userTab } from '@/server/entity/user';
+import { auditLogService } from '@/server/service/audit-log-service';
 
 const NORMAL_STATUS = 1;
 const MAX_COMMENT_LENGTH = 200;
@@ -156,6 +157,13 @@ const photoCommentService = {
     }
 
     await orm.delete(photoCommentTab).where(eq(photoCommentTab.commentId, commentId));
+    await auditLogService.record({
+      actorUserId: userId,
+      action: 'comment.delete',
+      targetType: 'photo-comment',
+      targetId: commentId,
+      details: { photoId: comment.photoId },
+    });
   },
 };
 

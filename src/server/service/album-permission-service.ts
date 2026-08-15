@@ -5,11 +5,12 @@ import { albumPhotoTab } from '@/server/entity/album-photo';
 import { albumTab } from '@/server/entity/album';
 import { photoTab } from '@/server/entity/photo';
 import { userTab } from '@/server/entity/user';
-import { type AlbumMemberSetBo } from '@/server/entity/bo/album-member';
+import { type AlbumMemberBatchSetBo, type AlbumMemberSetBo } from '@/server/entity/bo/album-member';
 import { type AlbumMemberVo, type AlbumPermission } from '@/server/entity/vo/album-member';
 import { UserTypeEnum } from '@/server/enums/user-enum';
 import { orm } from '@/server/infra/db';
 import { createId } from '@/server/lib/id';
+import { auditLogService } from '@/server/service/audit-log-service';
 
 // 这个模块集中处理共享相册的读取和写入权限。
 
@@ -268,7 +269,8 @@ const albumPermissionService = {
   },
 
   // 新增或更新成员在指定相册中的权限，关闭查看时删除授权记录。
-  async setMemberPermission(params: AlbumMemberSetBo): Promise<void> {
+  async setMemberPermission(params: AlbumMemberSetBo, actorUserId: string): Promise<void> {
+    await this.assertAdmin(actorUserId);
     const albumId = params.albumId?.trim();
     const userId = params.userId?.trim();
 
@@ -281,7 +283,7 @@ const albumPermissionService = {
     }
 
     const [target] = await orm
-      .select({ userId: userTab.userId, type: userTab.type })
+      .select({ userId: userTab.userId, username: userTab.username, type: userTab.type })
       .from(userTab)
       .where(eq(userTab.userId, userId))
       .limit(1);
@@ -291,7 +293,7 @@ const albumPermissionService = {
     }
 
     const [album] = await orm
-      .select({ albumId: albumTab.albumId })
+      .select({ albumId: albumTab.albumId, name: albumTab.name })
       .from(albumTab)
       .where(eq(albumTab.albumId, albumId))
       .limit(1);
@@ -309,6 +311,13 @@ const albumPermissionService = {
         eq(albumMemberTab.albumId, albumId),
         eq(albumMemberTab.userId, userId),
       ));
+      await auditLogService.record({
+        actorUserId,
+        action: 'album.permission.remove',
+        targetType: 'album-member',
+        targetId: `${albumId}:${userId}`,
+        targetName: `${album.name} / ${target.username}`,
+      });
       return;
     }
 
@@ -331,14 +340,49 @@ const albumPermissionService = {
         updateTime: now,
       },
     });
+    await auditLogService.record({
+      actorUserId,
+      action: 'album.permission.set',
+      targetType: 'album-member',
+      targetId: `${albumId}:${userId}`,
+      targetName: `${album.name} / ${target.username}`,
+      details: { canView: true, canUpload, canDeleteOwn },
+    });
   },
 
   // 删除成员在指定相册中的全部权限。
-  async removeMemberPermission(albumId: string, userId: string): Promise<void> {
+  async removeMemberPermission(albumId: string, userId: string, actorUserId: string): Promise<void> {
+    await this.assertAdmin(actorUserId);
     await orm.delete(albumMemberTab).where(and(
       eq(albumMemberTab.albumId, albumId),
       eq(albumMemberTab.userId, userId),
     ));
+    await auditLogService.record({
+      actorUserId,
+      action: 'album.permission.remove',
+      targetType: 'album-member',
+      targetId: `${albumId}:${userId}`,
+    });
+  },
+
+  // 为多个成员批量设置同一组相册权限。
+  async batchSetMemberPermission(params: AlbumMemberBatchSetBo, actorUserId: string): Promise<void> {
+    await this.assertAdmin(actorUserId);
+    const userIds = Array.from(new Set(params.userIds.filter(Boolean)));
+
+    if (!userIds.length) {
+      throw new BizError('user.selectRequired');
+    }
+
+    for (const userId of userIds) {
+      await this.setMemberPermission({
+        albumId: params.albumId,
+        userId,
+        canView: params.canView,
+        canUpload: params.canUpload,
+        canDeleteOwn: params.canDeleteOwn,
+      }, actorUserId);
+    }
   },
 };
 

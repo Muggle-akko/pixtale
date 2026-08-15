@@ -43,6 +43,7 @@ import { type AlbumPermission } from '@/server/entity/vo/album-member';
 import { photoFavoriteTab } from '@/server/entity/photo-favorite';
 import { photoFavoriteService } from '@/server/service/photo-favorite-service';
 import { photoCommentTab } from '@/server/entity/photo-comment';
+import { auditLogService } from '@/server/service/audit-log-service';
 
 // 这个模块处理照片上传、列表、回收站等业务。
 
@@ -519,6 +520,13 @@ const photoService = {
         recycleTime: new Date().toISOString()
       })
       .where(inArray(photoTab.photoId, params.photoIds));
+
+    await auditLogService.record({
+      actorUserId: userId,
+      action: 'photo.recycle',
+      targetType: 'photo',
+      details: { photoIds: params.photoIds },
+    });
   },
 
   // 把指定用户的全部照片移动到回收站，并记录回收时间。
@@ -596,6 +604,13 @@ const photoService = {
 
     await orm.delete(photoTab)
       .where(inArray(photoTab.photoId, photoIds));
+
+    await auditLogService.record({
+      actorUserId: userId,
+      action: 'photo.delete',
+      targetType: 'photo',
+      details: { photoIds },
+    });
   },
 
   // 清理当前用户回收站中的照片文件和数据库记录。
@@ -610,6 +625,12 @@ const photoService = {
     await this.clearDeletedPhotos({
       recycleTime: now,
       syncDelete
+    });
+
+    await auditLogService.record({
+      actorUserId: userId,
+      action: 'photo.clear',
+      targetType: 'trash',
     });
   },
 
