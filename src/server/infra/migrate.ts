@@ -182,6 +182,27 @@ const migrationList = [
       WHERE favorite = 2`,
     ],
   },
+  {
+    version: '2026081503_photo_comment',
+    sqlList: [
+      `CREATE TABLE IF NOT EXISTS photo_comment (
+          comment_id TEXT PRIMARY KEY,
+          photo_id TEXT NOT NULL,
+          user_id TEXT,
+          author_name TEXT NOT NULL,
+          body TEXT NOT NULL,
+          x_ratio REAL NOT NULL,
+          y_ratio REAL NOT NULL,
+          status INTEGER NOT NULL DEFAULT 1,
+          create_time TEXT NOT NULL,
+          update_time TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_photo_comment_photo_status_time
+          ON photo_comment (photo_id, status, create_time)`,
+      `CREATE INDEX IF NOT EXISTS idx_photo_comment_user
+          ON photo_comment (user_id)`,
+    ],
+  },
 ];
 
 // 在 Turso 上顺序执行尚未应用的版本化迁移。

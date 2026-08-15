@@ -17,6 +17,7 @@ import { AUTH_CACHE_TTL } from '@/server/const/global';
 import { albumMemberTab } from '@/server/entity/album-member';
 import { albumTab } from '@/server/entity/album';
 import { photoFavoriteTab } from '@/server/entity/photo-favorite';
+import { photoCommentTab } from '@/server/entity/photo-comment';
 
 // 这个模块处理用户数据查询和写入相关业务。
 
@@ -385,6 +386,11 @@ const userService = {
 
     await orm.delete(photoFavoriteTab)
       .where(eq(photoFavoriteTab.userId, deleteUserId));
+
+    // 评论保留发布时的用户名快照；账号删除后仅解除作者账号关联。
+    await orm.update(photoCommentTab)
+      .set({ userId: null })
+      .where(eq(photoCommentTab.userId, deleteUserId));
 
     await orm.delete(userTab)
       .where(eq(userTab.userId, deleteUserId));

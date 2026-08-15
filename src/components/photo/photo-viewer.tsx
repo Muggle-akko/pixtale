@@ -6,13 +6,16 @@ import { isImageSlide, type SlideImage, useController, useLightboxState } from "
 import Fullscreen from "yet-another-react-lightbox/plugins/fullscreen"
 import Thumbnails from "yet-another-react-lightbox/plugins/thumbnails"
 import Zoom from "yet-another-react-lightbox/plugins/zoom"
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, Menu, LoaderCircleIcon, MaximizeIcon, PanelRightClose, PanelRightOpen, RotateCcwSquare } from "lucide-react"
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, EyeIcon, EyeOffIcon, Menu, LoaderCircleIcon, MessageSquarePlusIcon, PanelRightClose, PanelRightOpen, RotateCcwSquare } from "lucide-react"
 
 import { PhotoInfoSidebar, PhotoViewerBlurBackground } from "@/components/photo/photo-info-sidebar"
+import { PhotoCommentComposer, PhotoCommentMarkers, type CommentPosition } from "@/components/photo/photo-comments-overlay"
 import { useTapAction } from "@/hooks/use-tap-action"
 import { Button } from "@/components/ui/button"
 import { getThumbHashUrl } from "@/lib/thumb-hash"
+import { photoCommentAdd, photoCommentDelete, photoCommentList, photoCommentUpdate } from "@/request/photo-comment"
 import { type PhotoVo } from "@/server/entity/vo/photo"
+import { type PhotoCommentVo } from "@/server/entity/vo/photo-comment"
 import { usePhotoStore } from "@/store/photo-store"
 import { useTranslations } from "next-intl"
 
@@ -42,13 +45,6 @@ type PhotoSlide = SlideImage & {
   thumbnail: string
   // thumbHash 转换后的模糊色背景。
   thumbHashUrl?: string
-}
-
-type FullscreenButtonProps = {
-  // 当前是否处于全屏状态。
-  fullscreen: boolean
-  // 进入全屏。
-  enter: () => void
 }
 
 type OriginalPhoto = {
@@ -91,6 +87,8 @@ type LoadOriginalImageParams = {
 const photoViewerPortalStyle: CSSProperties & { "--yarl__portal_zindex": number } = {
   "--yarl__portal_zindex": 40,
 }
+
+const COMMENTS_VISIBLE_STORAGE_KEY = "pixtale-photo-comments-visible"
 
 // 根据操作按钮显示状态生成淡入淡出样式。
 function getActionVisibleClass(showActions: boolean) {
@@ -333,45 +331,6 @@ function NextButton({ showActions }: { showActions: boolean }) {
   )
 }
 
-// 渲染全屏按钮。
-function FullscreenButton({
-  fullscreen,
-  enter,
-  showActions,
-  onHideActions,
-}: FullscreenButtonProps & {
-  showActions: boolean
-  onHideActions: () => void
-}) {
-  if (fullscreen) {
-    return null
-  }
-
-  // 进入全屏状态后隐藏查看器操作按钮。
-  function openFullscreen() {
-    enter()
-    onHideActions()
-  }
-
-  const tap = useTapAction(openFullscreen)
-
-  return (
-    <Button
-      type="button"
-      size="icon"
-      variant="secondary"
-      className={[
-        "absolute top-2 right-2 md:top-3 md:right-3 z-40 rounded-full bg-black/40 text-white transition-opacity duration-200 hover:bg-black/50",
-        getActionVisibleClass(showActions),
-      ].join(" ")}
-      {...tap}
-    >
-      <MaximizeIcon />
-      <span className="sr-only">Enter fullscreen</span>
-    </Button>
-  )
-}
-
 // 渲染照片信息按钮，点击切换右侧信息侧栏。
 function InfoButton({
   showActions,
@@ -512,7 +471,12 @@ function PhotoSlideImage({
   slide,
   originalPhoto,
   rotate,
-  fullscreenOpen,
+  comments,
+  commentsVisible,
+  commentMode,
+  selectedCommentId,
+  onCreatePosition,
+  onSelectComment,
 }: {
   // 当前照片 slide。
   slide: PhotoSlide
@@ -520,35 +484,111 @@ function PhotoSlideImage({
   originalPhoto: OriginalPhoto | null
   // 当前照片 CSS 旋转角度。
   rotate: number
-  // 当前是否处于全屏状态。
-  fullscreenOpen: boolean
+  // 当前照片的空间评论。
+  comments: PhotoCommentVo[]
+  // 是否显示评论标签。
+  commentsVisible: boolean
+  // 是否允许点击图片创建评论。
+  commentMode: boolean
+  // 当前选中的评论。
+  selectedCommentId: string | null
+  // 创建评论位置。
+  onCreatePosition: (position: CommentPosition) => void
+  // 选中已有评论。
+  onSelectComment: (comment: PhotoCommentVo) => void
 }) {
-  const normalizedRotate = rotate % 360
+  const [imageRatio, setImageRatio] = useState(
+    slide.width && slide.height ? slide.width / slide.height : 1,
+  )
+  const normalizedRotate = ((rotate % 360) + 360) % 360
   const sideways = normalizedRotate === 90 || normalizedRotate === 270
-  const thumbnailHeight = innerWidth < 768 ? 46 : 75
-  const rotateWidthOffset = fullscreenOpen ? 0 : thumbnailHeight
+  const imageWidth = sideways
+    ? `min(calc(100cqw * ${imageRatio}), 100cqh)`
+    : `min(100cqw, calc(100cqh * ${imageRatio}))`
+  const imageHeight = sideways
+    ? `min(100cqw, calc(100cqh / ${imageRatio}))`
+    : `min(100cqh, calc(100cqw / ${imageRatio}))`
+
+  // 把旋转后的屏幕坐标还原成原图上的归一化坐标。
+  function createCommentAt(event: React.MouseEvent<HTMLDivElement>) {
+    if (!commentMode) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = event.currentTarget.getBoundingClientRect()
+    const screenX = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
+    const screenY = Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height))
+    let xRatio = screenX
+    let yRatio = screenY
+
+    if (normalizedRotate === 90) {
+      xRatio = screenY
+      yRatio = 1 - screenX
+    } else if (normalizedRotate === 180) {
+      xRatio = 1 - screenX
+      yRatio = 1 - screenY
+    } else if (normalizedRotate === 270) {
+      xRatio = 1 - screenY
+      yRatio = screenX
+    }
+
+    onCreatePosition({ xRatio, yRatio })
+  }
 
   return (
-    <img
-      src={originalPhoto?.key === slide.preview || originalPhoto?.key === slide.key ? originalPhoto.key : slide.src}
-      alt={slide.alt}
-      draggable={false}
-      crossOrigin="anonymous"
-      className="select-none max-w-none object-contain transition-transform duration-200"
-      onError={(event) => {
-        event.currentTarget.style.display = "none"
-      }}
+    <div
+      className={[
+        "relative max-w-none origin-center transition-transform duration-200",
+        commentMode ? "cursor-crosshair" : "",
+      ].join(" ")}
       style={{
-        width: sideways ? `calc(100cqh - ${rotateWidthOffset}px)` : "100%",
-        height: sideways ? "100vw" : "100%",
+        width: imageWidth,
+        height: imageHeight,
         transform: `rotate(${rotate}deg)`,
       }}
-    />
+      onPointerDown={(event) => {
+        if (commentMode) {
+          event.stopPropagation()
+        }
+      }}
+      onPointerUp={(event) => {
+        if (commentMode) {
+          event.stopPropagation()
+        }
+      }}
+      onClick={createCommentAt}
+    >
+      <img
+        src={originalPhoto?.key === slide.preview || originalPhoto?.key === slide.key ? originalPhoto.key : slide.src}
+        alt={slide.alt}
+        draggable={false}
+        crossOrigin="anonymous"
+        className="h-full w-full select-none object-fill"
+        onLoad={(event) => {
+          if (event.currentTarget.naturalWidth && event.currentTarget.naturalHeight) {
+            setImageRatio(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight)
+          }
+        }}
+        onError={(event) => {
+          event.currentTarget.style.display = "none"
+        }}
+      />
+      <PhotoCommentMarkers
+        comments={comments}
+        visible={commentsVisible}
+        rotate={rotate}
+        selectedCommentId={selectedCommentId}
+        onSelect={onSelectComment}
+      />
+    </div>
   )
 }
 
 // 渲染照片详情查看器，父组件负责传入当前照片和列表数据。
 export function PhotoViewer({ open, index, photos, onBack, onBrowserBack }: PhotoViewerProps) {
+  const t = useTranslations("photos.viewer")
   // 当前 lightbox 查看的照片索引。
   const [viewIndex, setViewIndex] = useState(index)
   // infoOpen 控制右侧照片信息侧栏是否展开。
@@ -573,6 +613,22 @@ export function PhotoViewer({ open, index, photos, onBack, onBrowserBack }: Phot
   const [fullscreenOpen, setFullscreenOpen] = useState(false)
   // 每张照片当前的旋转角度。
   const [photoRotates, setPhotoRotates] = useState<Record<string, number>>({})
+  // commentsByPhoto 保存已经读取的空间评论。
+  const [commentsByPhoto, setCommentsByPhoto] = useState<Record<string, PhotoCommentVo[]>>({})
+  // commentsVisible 控制全部评论标签是否显示。
+  const [commentsVisible, setCommentsVisible] = useState(() => (
+    typeof window === "undefined"
+      ? true
+      : window.localStorage.getItem(COMMENTS_VISIBLE_STORAGE_KEY) !== "false"
+  ))
+  // commentMode 开启后，点击图片才会创建评论。
+  const [commentMode, setCommentMode] = useState(false)
+  // draftComment 保存新评论的照片位置。
+  const [draftComment, setDraftComment] = useState<(CommentPosition & { photoId: string }) | null>(null)
+  // selectedComment 保存当前查看或编辑的评论。
+  const [selectedComment, setSelectedComment] = useState<PhotoCommentVo | null>(null)
+  const [commentSaving, setCommentSaving] = useState(false)
+  const [commentDeleting, setCommentDeleting] = useState(false)
   // getPhotoCache 从全局照片缓存中读取已加载的照片。
   const getPhotoCache = usePhotoStore((state) => state.getPhotoCache)
   // setPhotoCache 把已经加载完成的照片写入全局照片缓存。
@@ -609,12 +665,34 @@ export function PhotoViewer({ open, index, photos, onBack, onBrowserBack }: Phot
       alt: photo.name,
     }))
   ), [photos])
-  const actionsVisible = showActions && zoomLevel <= 1
+  const actionsVisible = (showActions || commentMode) && zoomLevel <= 1
+  const currentPhotoId = photos[viewIndex]?.photoId ?? null
 
   useEffect(() => {
     // 保持浏览器返回回调为父组件传入的最新方法。
     onBrowserBackRef.current = onBrowserBack
   }, [onBrowserBack])
+
+  useEffect(() => {
+    if (!open || !currentPhotoId || commentsByPhoto[currentPhotoId]) {
+      return
+    }
+
+    let active = true
+    photoCommentList({ photoId: currentPhotoId })
+      .then((comments) => {
+        if (active) {
+          setCommentsByPhoto((prev) => ({ ...prev, [currentPhotoId]: comments }))
+        }
+      })
+      .catch(() => {
+        // 请求层已经向用户展示错误；这里允许下次打开时重试。
+      })
+
+    return () => {
+      active = false
+    }
+  }, [commentsByPhoto, currentPhotoId, open])
 
   useLayoutEffect(() => {
     if (!open) {
@@ -673,6 +751,9 @@ export function PhotoViewer({ open, index, photos, onBack, onBrowserBack }: Phot
   // 处理照片切换后的原图加载。
   function handleView(nextIndex: number) {
     setViewIndex(nextIndex)
+    setCommentMode(false)
+    setDraftComment(null)
+    setSelectedComment(null)
 
     const photo = photos[nextIndex]
     const preview = photo.preview
@@ -753,6 +834,11 @@ export function PhotoViewer({ open, index, photos, onBack, onBrowserBack }: Phot
 
   // 抬起时若位移很小则视为点击，切换操作按钮；拖动切换照片时不处理。
   function handleSlidePointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    if (commentMode) {
+      slidePointerStartRef.current = null
+      return
+    }
+
     if (zoomLevel > 1) {
       slidePointerStartRef.current = null
       return
@@ -784,6 +870,105 @@ export function PhotoViewer({ open, index, photos, onBack, onBrowserBack }: Phot
       ...prev,
       [photoId]: (prev[photoId] ?? 0) + 90,
     }))
+  }
+
+  // 切换评论标签显示状态并保存到当前浏览器。
+  function toggleCommentsVisible() {
+    const next = !commentsVisible
+    setCommentsVisible(next)
+    window.localStorage.setItem(COMMENTS_VISIBLE_STORAGE_KEY, String(next))
+
+    if (!next) {
+      setCommentMode(false)
+      setDraftComment(null)
+      setSelectedComment(null)
+    }
+  }
+
+  // 开关显式评论模式；开启时保证标签可见。
+  function toggleCommentMode() {
+    setCommentMode((prev) => {
+      const next = !prev
+      if (next && !commentsVisible) {
+        setCommentsVisible(true)
+        window.localStorage.setItem(COMMENTS_VISIBLE_STORAGE_KEY, "true")
+      }
+      if (!next) {
+        setDraftComment(null)
+      }
+      return next
+    })
+    setSelectedComment(null)
+    setShowActions(true)
+  }
+
+  // 在当前照片坐标上打开新评论输入框。
+  function createCommentPosition(photoId: string, position: CommentPosition) {
+    setDraftComment({ photoId, ...position })
+    setSelectedComment(null)
+  }
+
+  // 新增或更新当前评论。
+  async function saveComment(body: string) {
+    setCommentSaving(true)
+
+    try {
+      if (draftComment) {
+        const created = await photoCommentAdd({
+          photoId: draftComment.photoId,
+          body,
+          xRatio: draftComment.xRatio,
+          yRatio: draftComment.yRatio,
+        })
+        setCommentsByPhoto((prev) => ({
+          ...prev,
+          [created.photoId]: [...(prev[created.photoId] ?? []), created],
+        }))
+        setDraftComment(null)
+        setSelectedComment(created)
+        setCommentMode(false)
+        return
+      }
+
+      if (!selectedComment?.isOwn) {
+        return
+      }
+
+      await photoCommentUpdate({ commentId: selectedComment.commentId, body })
+      const updateTime = new Date().toISOString()
+      setCommentsByPhoto((prev) => ({
+        ...prev,
+        [selectedComment.photoId]: (prev[selectedComment.photoId] ?? []).map((comment) => (
+          comment.commentId === selectedComment.commentId
+            ? { ...comment, body: body.trim(), updateTime }
+            : comment
+        )),
+      }))
+      setSelectedComment((prev) => prev ? { ...prev, body: body.trim(), updateTime } : null)
+    } finally {
+      setCommentSaving(false)
+    }
+  }
+
+  // 删除本人评论，管理员也可以删除任意评论。
+  async function deleteSelectedComment() {
+    if (!selectedComment?.canDelete) {
+      return
+    }
+
+    setCommentDeleting(true)
+    try {
+      await photoCommentDelete({ commentId: selectedComment.commentId })
+      setCommentsByPhoto((prev) => ({
+        ...prev,
+        [selectedComment.photoId]: (prev[selectedComment.photoId] ?? []).filter(
+          (comment) => comment.commentId !== selectedComment.commentId,
+        ),
+      }))
+      setSelectedComment(null)
+    } finally {
+      setCommentDeleting(false)
+    }
   }
 
   // 把页面滚动位置恢复到打开查看器前，抵消 lightbox 关闭时的焦点滚动。
@@ -896,6 +1081,61 @@ export function PhotoViewer({ open, index, photos, onBack, onBrowserBack }: Phot
               getPhotoCache={getPhotoCache}
               onLoadOriginal={loadOriginalPhoto}
             />
+            <div
+              className={[
+                "absolute bottom-14 left-2 z-40 flex gap-1.5 transition-opacity duration-200 md:bottom-24 md:left-3",
+                getActionVisibleClass(actionsVisible),
+              ].join(" ")}
+            >
+              <Button
+                type="button"
+                size="icon"
+                variant="secondary"
+                className={[
+                  "rounded-full text-white",
+                  commentMode ? "bg-white text-black hover:bg-white/90" : "bg-black/40 hover:bg-black/50",
+                ].join(" ")}
+                title={commentMode ? t("exitCommentMode") : t("enterCommentMode")}
+                onClick={toggleCommentMode}
+              >
+                <MessageSquarePlusIcon />
+                <span className="sr-only">{commentMode ? t("exitCommentMode") : t("enterCommentMode")}</span>
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="secondary"
+                className="rounded-full bg-black/40 text-white hover:bg-black/50"
+                title={commentsVisible ? t("hideComments") : t("showComments")}
+                onClick={toggleCommentsVisible}
+              >
+                {commentsVisible ? <EyeIcon /> : <EyeOffIcon />}
+                <span className="sr-only">{commentsVisible ? t("hideComments") : t("showComments")}</span>
+              </Button>
+            </div>
+            {(draftComment || selectedComment) && (
+              <PhotoCommentComposer
+                key={draftComment ? `new-${draftComment.photoId}-${draftComment.xRatio}-${draftComment.yRatio}` : selectedComment?.commentId}
+                position={draftComment}
+                comment={selectedComment}
+                saving={commentSaving}
+                deleting={commentDeleting}
+                onSave={saveComment}
+                onDelete={deleteSelectedComment}
+                onClose={() => {
+                  setDraftComment(null)
+                  setSelectedComment(null)
+                }}
+                labels={{
+                  placeholder: t("commentPlaceholder"),
+                  add: t("addComment"),
+                  edit: t("editComment"),
+                  delete: t("deleteComment"),
+                  close: t("closeComment"),
+                  deletedAuthor: t("deletedAuthor"),
+                }}
+              />
+            )}
             {showOriginalProgress && (
               <OriginalProgressButton progress={originalProgress} error={originalError} />
             )}
@@ -912,7 +1152,7 @@ export function PhotoViewer({ open, index, photos, onBack, onBrowserBack }: Phot
 
           return (
             <div
-              className="relative flex h-full w-full items-center justify-center overflow-hidden"
+              className="relative flex h-full w-full items-center justify-center overflow-hidden [container-type:size]"
               onPointerDown={handleSlidePointerDown}
               onPointerUp={handleSlidePointerUp}
               onPointerCancel={handleSlidePointerCancel}
@@ -929,7 +1169,16 @@ export function PhotoViewer({ open, index, photos, onBack, onBrowserBack }: Phot
                 slide={photoSlide}
                 originalPhoto={originalPhoto}
                 rotate={photoRotates[photoSlide.photoId] ?? 0}
-                fullscreenOpen={fullscreenOpen}
+                comments={commentsByPhoto[photoSlide.photoId] ?? []}
+                commentsVisible={commentsVisible}
+                commentMode={commentMode && photoSlide.photoId === currentPhotoId}
+                selectedCommentId={selectedComment?.commentId ?? null}
+                onCreatePosition={(position) => createCommentPosition(photoSlide.photoId, position)}
+                onSelectComment={(comment) => {
+                  setDraftComment(null)
+                  setSelectedComment(comment)
+                  setCommentMode(false)
+                }}
               />
             </div>
           )

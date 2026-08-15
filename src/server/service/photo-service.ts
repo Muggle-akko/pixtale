@@ -42,6 +42,7 @@ import { userTab } from '@/server/entity/user';
 import { type AlbumPermission } from '@/server/entity/vo/album-member';
 import { photoFavoriteTab } from '@/server/entity/photo-favorite';
 import { photoFavoriteService } from '@/server/service/photo-favorite-service';
+import { photoCommentTab } from '@/server/entity/photo-comment';
 
 // 这个模块处理照片上传、列表、回收站等业务。
 
@@ -588,6 +589,9 @@ const photoService = {
     await orm.delete(photoFavoriteTab)
       .where(inArray(photoFavoriteTab.photoId, photoIds));
 
+    await orm.delete(photoCommentTab)
+      .where(inArray(photoCommentTab.photoId, photoIds));
+
     await fileService.deleteByPhotoIds(photoIds);
 
     await orm.delete(photoTab)
@@ -667,6 +671,9 @@ const photoService = {
 
       await orm.delete(photoFavoriteTab)
         .where(inArray(photoFavoriteTab.photoId, photoIds));
+
+      await orm.delete(photoCommentTab)
+        .where(inArray(photoCommentTab.photoId, photoIds));
 
       await fileService.deleteByPhotoIds(photoIds);
 

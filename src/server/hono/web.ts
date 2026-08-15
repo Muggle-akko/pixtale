@@ -3,6 +3,7 @@ import './hono';
 import '../api/album-api'
 import '../api/album-member-api'
 import '../api/photo-api'
+import '../api/photo-comment-api'
 import '../api/storage-api'
 import '../api/user-api'
 import '../api/login-api'
