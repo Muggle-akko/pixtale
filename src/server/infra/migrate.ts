@@ -122,20 +122,107 @@ const createTableSqlList = [
     )`,
 ];
 
+// 版本化迁移记录，避免结构升级在每次启动时重复执行。
+const schemaMigrationTableSql = `CREATE TABLE IF NOT EXISTS schema_migration (
+    version TEXT PRIMARY KEY,
+    applied_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+)`;
+
+const migrationList = [
+  {
+    version: '2026081501_album_member',
+    sqlList: [
+      `CREATE TABLE IF NOT EXISTS album_member (
+          id TEXT PRIMARY KEY,
+          album_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          can_view INTEGER NOT NULL DEFAULT 0,
+          can_upload INTEGER NOT NULL DEFAULT 0,
+          can_delete_own INTEGER NOT NULL DEFAULT 0,
+          create_time TEXT NOT NULL,
+          update_time TEXT NOT NULL,
+          UNIQUE(album_id, user_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_album_member_user_view_album
+          ON album_member (user_id, can_view, album_id)`,
+      `INSERT OR IGNORE INTO album_member (
+          id, album_id, user_id, can_view, can_upload, can_delete_own, create_time, update_time
+      )
+      SELECT
+          'migration-' || album_id || '-' || user_id,
+          album_id,
+          user_id,
+          1,
+          1,
+          1,
+          strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+          strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+      FROM album`,
+    ],
+  },
+];
+
+// 在 Turso 上顺序执行尚未应用的版本化迁移。
+async function migrateTurso(): Promise<void> {
+  await turso!.batch([
+    ...createTableSqlList.map((sql) => ({ sql })),
+    { sql: schemaMigrationTableSql },
+  ], 'write');
+
+  const appliedResult = await turso!.execute('SELECT version FROM schema_migration');
+  const appliedVersions = new Set(appliedResult.rows.map((row) => String(row.version)));
+
+  for (const migration of migrationList) {
+    if (appliedVersions.has(migration.version)) {
+      continue;
+    }
+
+    await turso!.batch([
+      ...migration.sqlList.map((sql) => ({ sql })),
+      {
+        sql: 'INSERT INTO schema_migration (version) VALUES (?)',
+        args: [migration.version],
+      },
+    ], 'write');
+  }
+}
+
+// 在本地 SQLite 事务中执行尚未应用的版本化迁移。
+function migrateSqlite(): void {
+  const runBatch = db!.transaction(() => {
+    for (const sql of createTableSqlList) {
+      db!.exec(sql);
+    }
+
+    db!.exec(schemaMigrationTableSql);
+    const appliedRows = db!.prepare('SELECT version FROM schema_migration').all() as { version: string }[];
+    const appliedVersions = new Set(appliedRows.map((row) => row.version));
+
+    for (const migration of migrationList) {
+      if (appliedVersions.has(migration.version)) {
+        continue;
+      }
+
+      for (const sql of migration.sqlList) {
+        db!.exec(sql);
+      }
+
+      db!.prepare('INSERT INTO schema_migration (version) VALUES (?)').run(migration.version);
+    }
+  });
+
+  runBatch();
+}
+
 // 执行全部建表语句，已存在的表会自动跳过。
 async function migrate(): Promise<void> {
 
   if (process.env.TURSO_DATABASE_URL) {
-    await turso!.batch(createTableSqlList.map((sql) => ({ sql })), 'write')
-    return
+    await migrateTurso();
+    return;
   }
 
-  const runBatch = db!.transaction(() => {
-    for (const sql of createTableSqlList) {
-      db!.exec(sql)
-    }
-  })
-  runBatch()
+  migrateSqlite();
 }
 
 export { migrate };

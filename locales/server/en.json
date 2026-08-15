@@ -4,6 +4,7 @@
   "system.internalError": "Internal server error.",
   "auth.failed": "Authentication failed.",
   "auth.forbidden": "You don't have permission to perform this action.",
+  "auth.notFound": "Resource not found.",
   "album.nameRequired": "Album name is required.",
   "album.nameExists": "An album with this name already exists.",
   "album.selectRequired": "Select at least one album.",

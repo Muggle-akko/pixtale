@@ -26,7 +26,7 @@ app.onError((err, c) => {
 
     const message = t(err.message);
 
-    if (err.code === 401 || err.code === 403) {
+    if (err.code === 401 || err.code === 403 || err.code === 404) {
       return c.json(result.fail(message, err.code), err.code);
     }
 
