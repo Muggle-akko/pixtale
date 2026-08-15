@@ -9,6 +9,9 @@
     <img alt="AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue?labelColor=black&style=flat-square">
 </div>
 
+> [!NOTE]
+> 本仓库是 [aslost/pixtale](https://github.com/aslost/pixtale) 的非官方修改版本。修改记录见 [MODIFICATIONS.md](MODIFICATIONS.md)，项目继续使用 AGPL-3.0-only 许可证。
+
 
 ## 前言
 
@@ -56,7 +59,6 @@ Pixtale 是一个基于Next.js构建的沉浸式瀑布流相册，主要用于�
 ## 许可证
 
 `Pixtale` 是基于 [AGPL-3.0](LICENSE) 许可证的开源软件
-
 
 
 

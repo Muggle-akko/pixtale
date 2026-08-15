@@ -9,6 +9,9 @@
     <img alt="AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue?labelColor=black&style=flat-square">
 </div>
 
+> [!NOTE]
+> This repository is an unofficial modified version of [aslost/pixtale](https://github.com/aslost/pixtale). See [MODIFICATIONS.md](MODIFICATIONS.md) for the change history. It remains licensed under AGPL-3.0-only.
+
 ## Introduction
 
 Pixtale is an immersive masonry photo gallery built with Next.js for storing personal photos privately. It supports local storage and S3-compatible object storage, and can be deployed with Docker or on Vercel.
