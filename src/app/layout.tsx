@@ -17,7 +17,7 @@ const THEME_COOKIE_NAME = "theme"
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    title: process.env.TITLE || "Pixtale",
+    title: process.env.TITLE || "awutopics",
     icons: {
       icon: "/logo.png",
       apple: "/logo.png",

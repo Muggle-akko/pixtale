@@ -18,7 +18,7 @@ export default async function MainLayout({ children }: MainLayoutProps) {
   const defaultSidebarOpen = cookieStore.get(SIDEBAR_COOKIE_NAME)?.value === "true"
   const proxyUser = await getProxyUser()
   const userInfo = proxyUser ? await userService.getById(proxyUser.userId) : null
-  const title = process.env.TITLE || "Pixtale"
+  const title = process.env.TITLE || "awutopics"
   const messages = await getMessages()
 
   return (

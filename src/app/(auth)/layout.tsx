@@ -5,7 +5,7 @@ import { getMessages, getTranslations } from "next-intl/server"
 // 根据当前语言生成登录侧元数据。
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations("login")
-  const title = process.env.TITLE || "Pixtale"
+  const title = process.env.TITLE || "awutopics"
 
   return {
     title: t("metaTitle", { appName: title }),

@@ -9,7 +9,7 @@ import { type LoginBo } from "@/server/entity/bo/login"
 
 // 登录页：提交登录后跳转主体页面。
 export default function AuthPage() {
-  const title = process.env.TITLE || "Pixtale"
+  const title = process.env.TITLE || "awutopics"
   // loading 标记登录请求是否正在提交。
   const [loading, setLoading] = useState(false)
   const router = useRouter()
